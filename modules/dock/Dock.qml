@@ -33,7 +33,10 @@ PanelWindow {
     visible: ShellLayout.showBarOn(modelData) && windows.length > 0
     anchors.bottom: true
     implicitWidth: dockBody.width + 16
-    implicitHeight: 58
+    // Exactly the dock body: no padding on any edge, so the dock sits flush
+    // against the bottom of the screen and maximized windows come right up to
+    // its top edge. Keep this in step with dockBody's height.
+    implicitHeight: 44
     // Forbidden zone for maximized windows; released when the dock hides.
     exclusiveZone: implicitHeight
     color: "transparent"
