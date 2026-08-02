@@ -19,8 +19,11 @@ PopupWindow {
     implicitHeight: 200
     color: "transparent"
 
-    anchor.edges: Edges.Top
-    anchor.gravity: Edges.Top
+    // Follow the dock: it sits at the bottom in the general layout (menu
+    // opens upward) and at the top of the ScreenPad in duo mode (menu opens
+    // downward). Anchoring to the wrong edge would open the menu off-screen.
+    anchor.edges: ShellLayout.duoMode ? Edges.Bottom : Edges.Top
+    anchor.gravity: ShellLayout.duoMode ? Edges.Bottom : Edges.Top
 
     // itemCenterX is in the dock window's coordinates.
     function openAt(window, itemCenterX, win) {

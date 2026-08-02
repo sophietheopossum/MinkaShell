@@ -31,7 +31,11 @@ PanelWindow {
 
     screen: modelData
     visible: ShellLayout.showBarOn(modelData) && windows.length > 0
-    anchors.bottom: true
+    // Duo mode puts the dock across the top of the ScreenPad, with the
+    // MinkaMon zone and the side column below it; the general layout keeps
+    // it at the bottom. DockMenu flips its gravity to match.
+    anchors.top: ShellLayout.duoMode
+    anchors.bottom: !ShellLayout.duoMode
     implicitWidth: dockBody.width + 16
     // Exactly the dock body: no padding on any edge, so the dock sits flush
     // against the bottom of the screen and maximized windows come right up to
