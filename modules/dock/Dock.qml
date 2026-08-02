@@ -36,7 +36,14 @@ PanelWindow {
     // it at the bottom. DockMenu flips its gravity to match.
     anchors.top: ShellLayout.duoMode
     anchors.bottom: !ShellLayout.duoMode
-    implicitWidth: dockBody.width + 16
+    // Duo mode spans the full width of the ScreenPad; the general layout
+    // stays a centred pill sized to its chips (implicitWidth below).
+    anchors.left: ShellLayout.duoMode
+    anchors.right: ShellLayout.duoMode
+    // Sourced from chipRow, not dockBody: in duo mode dockBody's width binds
+    // to this window's width, so going through it would be a binding loop.
+    // Same value either way (dockBody is chipRow.width + 16).
+    implicitWidth: chipRow.width + 32
     // Exactly the dock body: no padding on any edge, so the dock sits flush
     // against the bottom of the screen and maximized windows come right up to
     // its top edge. Keep this in step with dockBody's height.
@@ -64,12 +71,25 @@ PanelWindow {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 0
-        width: chipRow.width + 16
+        // Duo mode: a full-width strip, squared off with a single seam along
+        // its inner edge, matching the bar it replaces. General layout: a
+        // rounded pill hugging its chips.
+        width: ShellLayout.duoMode ? parent.width : chipRow.width + 16
         height: 44
-        radius: 10
+        radius: ShellLayout.duoMode ? 0 : 10
         color: Theme.barBg
-        border.width: 1
+        border.width: ShellLayout.duoMode ? 0 : 1
         border.color: Theme.line
+
+        // Seam below the strip in duo mode (the dock sits at the top there).
+        Rectangle {
+            visible: ShellLayout.duoMode
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: Theme.line
+        }
 
         Row {
             id: chipRow
