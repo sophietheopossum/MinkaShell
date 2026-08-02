@@ -42,8 +42,9 @@ PanelWindow {
     anchors.right: ShellLayout.duoMode
     // Sourced from chipRow, not dockBody: in duo mode dockBody's width binds
     // to this window's width, so going through it would be a binding loop.
-    // Same value either way (dockBody is chipRow.width + 16).
-    implicitWidth: chipRow.width + 32
+    // Capped at the output width so a long window list overflows into the
+    // scroll arrows rather than growing the dock off the side of the screen.
+    implicitWidth: Math.min(chipRow.width + 32, root.modelData.width)
     // Exactly the dock body: no padding on any edge, so the dock sits flush
     // against the bottom of the screen and maximized windows come right up to
     // its top edge. Keep this in step with dockBody's height.
@@ -51,6 +52,50 @@ PanelWindow {
     // Forbidden zone for maximized windows; released when the dock hides.
     exclusiveZone: implicitHeight
     color: "transparent"
+
+    // Overflow scroll button. Both arrows stay mapped once the chips stop
+    // fitting and dim at the ends instead of appearing and disappearing:
+    // visibility that depended on scroll position would feed back into the
+    // width it is derived from, which is a binding loop.
+    component DockArrow: Rectangle {
+        id: arrow
+
+        required property int direction // -1 = left, +1 = right
+        property bool canScroll: false
+
+        signal activated
+
+        width: 22
+        height: 32
+        radius: 6
+        color: arrowArea.containsMouse && arrow.canScroll
+             ? Theme.surfaceRaised
+             : "transparent"
+        opacity: arrow.canScroll ? 1.0 : 0.3
+
+        Behavior on opacity {
+            NumberAnimation { duration: 120 }
+        }
+
+        Text {
+            anchors.centerIn: parent
+            text: arrow.direction < 0 ? "‹" : "›"
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSize + 6
+            color: arrowArea.containsMouse && arrow.canScroll
+                 ? Theme.red
+                 : Theme.textMuted
+        }
+
+        MouseArea {
+            id: arrowArea
+
+            anchors.fill: parent
+            hoverEnabled: true
+            enabled: arrow.canScroll
+            onClicked: arrow.activated()
+        }
+    }
 
     DockMenu {
         id: dockMenu
@@ -68,13 +113,24 @@ PanelWindow {
     Rectangle {
         id: dockBody
 
+        // Space the chips can use once the body's own padding is removed.
+        readonly property real trackWidth: width - 16
+        // Derived only from chipRow (its children) and this body's width, so
+        // it can never depend on the scroll position or on arrow visibility.
+        readonly property bool overflowing: chipRow.width > trackWidth
+        // Arrow width plus the row spacing beside it.
+        readonly property real arrowSlot: 26
+
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 0
         // Duo mode: a full-width strip, squared off with a single seam along
         // its inner edge, matching the bar it replaces. General layout: a
-        // rounded pill hugging its chips.
-        width: ShellLayout.duoMode ? parent.width : chipRow.width + 16
+        // rounded pill hugging its chips, capped at the output width so it
+        // overflows into the arrows instead of running off the screen.
+        width: ShellLayout.duoMode
+             ? parent.width
+             : Math.min(chipRow.width + 16, root.modelData.width - 40)
         height: 44
         radius: ShellLayout.duoMode ? 0 : 10
         color: Theme.barBg
@@ -92,77 +148,136 @@ PanelWindow {
         }
 
         Row {
-            id: chipRow
+            id: chipArea
 
             anchors.centerIn: parent
-            spacing: 6
+            spacing: 4
 
-            Repeater {
-                model: root.windows
+            DockArrow {
+                anchors.verticalCenter: parent.verticalCenter
+                direction: -1
+                visible: dockBody.overflowing
+                canScroll: chipFlick.contentX > 0.5
+                onActivated: chipFlick.scrollBy(-1)
+            }
 
-                delegate: Rectangle {
-                    id: dockItem
+            Flickable {
+                id: chipFlick
 
-                    required property var modelData
+                // One arrow click moves most of a page, like Firefox's tab
+                // strip; the wheel still scrolls freely.
+                function scrollBy(dir) {
+                    const limit = Math.max(0, contentWidth - width);
+                    scrollAnim.to = Math.max(
+                        0,
+                        Math.min(limit, contentX + dir * width * 0.8)
+                    );
+                    scrollAnim.restart();
+                }
 
-                    readonly property var entry: modelData.appId
-                        ? DesktopEntries.heuristicLookup(modelData.appId)
-                        : null
+                anchors.verticalCenter: parent.verticalCenter
+                // Never derived from the scroll position, so the arrows can
+                // read contentX without feeding back into this width.
+                width: dockBody.overflowing
+                     ? dockBody.trackWidth - 2 * dockBody.arrowSlot
+                     : chipRow.width
+                height: 32
+                contentWidth: chipRow.width
+                clip: true
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
 
-                    width: chip.width + 16
-                    height: 32
-                    radius: 8
-                    color: dockItem.modelData.focused ? Theme.surfaceRaised
-                         : itemArea.containsMouse ? Theme.surface
-                         : "transparent"
-                    border.width: 1
-                    border.color: dockItem.modelData.focused ? Theme.redDim : "transparent"
+                NumberAnimation {
+                    id: scrollAnim
 
-                    Row {
-                        id: chip
+                    target: chipFlick
+                    property: "contentX"
+                    duration: 160
+                    easing.type: Easing.OutCubic
+                }
 
-                        anchors.centerIn: parent
-                        spacing: 7
+                Row {
+                    id: chipRow
 
-                        Image {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 20
-                            height: 20
-                            sourceSize.width: 20
-                            sourceSize.height: 20
-                            fillMode: Image.PreserveAspectFit
-                            source: dockItem.entry && dockItem.entry.icon
-                                ? Quickshell.iconPath(dockItem.entry.icon, "application-x-executable")
-                                : Quickshell.iconPath("application-x-executable")
-                        }
+                    spacing: 6
 
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: dockItem.modelData.title || dockItem.modelData.appId || "?"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSize - 1
-                            color: dockItem.modelData.focused ? Theme.text : Theme.textMuted
-                            elide: Text.ElideRight
-                            width: Math.min(implicitWidth, 150)
-                        }
-                    }
+                    Repeater {
+                        model: root.windows
 
-                    MouseArea {
-                        id: itemArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-                        onClicked: mouse => {
-                            if (mouse.button === Qt.RightButton) {
-                                root.openMenuFor(dockItem, dockItem.modelData);
-                            } else if (mouse.button === Qt.MiddleButton) {
-                                ShojiIpc.closeWindow(dockItem.modelData.id);
-                            } else {
-                                ShojiIpc.activateWindow(dockItem.modelData.id);
+                        delegate: Rectangle {
+                            id: dockItem
+
+                            required property var modelData
+
+                            readonly property var entry: modelData.appId
+                                ? DesktopEntries.heuristicLookup(modelData.appId)
+                                : null
+
+                            width: chip.width + 16
+                            height: 32
+                            radius: 8
+                            color: dockItem.modelData.focused ? Theme.surfaceRaised
+                                 : itemArea.containsMouse ? Theme.surface
+                                 : "transparent"
+                            border.width: 1
+                            border.color: dockItem.modelData.focused ? Theme.redDim : "transparent"
+
+                            Row {
+                                id: chip
+
+                                anchors.centerIn: parent
+                                spacing: 7
+
+                                Image {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 20
+                                    height: 20
+                                    sourceSize.width: 20
+                                    sourceSize.height: 20
+                                    fillMode: Image.PreserveAspectFit
+                                    source: dockItem.entry && dockItem.entry.icon
+                                        ? Quickshell.iconPath(dockItem.entry.icon, "application-x-executable")
+                                        : Quickshell.iconPath("application-x-executable")
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: dockItem.modelData.title || dockItem.modelData.appId || "?"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSize - 1
+                                    color: dockItem.modelData.focused ? Theme.text : Theme.textMuted
+                                    elide: Text.ElideRight
+                                    width: Math.min(implicitWidth, 150)
+                                }
+                            }
+
+                            MouseArea {
+                                id: itemArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                                onClicked: mouse => {
+                                    if (mouse.button === Qt.RightButton) {
+                                        root.openMenuFor(dockItem, dockItem.modelData);
+                                    } else if (mouse.button === Qt.MiddleButton) {
+                                        ShojiIpc.closeWindow(dockItem.modelData.id);
+                                    } else {
+                                        ShojiIpc.activateWindow(dockItem.modelData.id);
+                                    }
+                                }
                             }
                         }
                     }
                 }
+            }
+
+            DockArrow {
+                anchors.verticalCenter: parent.verticalCenter
+                direction: 1
+                visible: dockBody.overflowing
+                canScroll: chipFlick.contentX
+                    < chipFlick.contentWidth - chipFlick.width - 0.5
+                onActivated: chipFlick.scrollBy(1)
             }
         }
     }
