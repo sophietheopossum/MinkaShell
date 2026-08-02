@@ -11,7 +11,10 @@ PanelWindow {
     required property var modelData
 
     screen: modelData
-    visible: ShellLayout.showBarOn(modelData)
+    // Duo mode has no bar at all: the ScreenPad layout is dock across the
+    // top, MinkaMon's zone, and SidePanel on the right, which carries
+    // everything this bar used to hold.
+    visible: !ShellLayout.duoMode && ShellLayout.showBarOn(modelData)
 
     anchors {
         top: true

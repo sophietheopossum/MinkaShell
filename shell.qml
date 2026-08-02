@@ -7,6 +7,7 @@ import "modules/startmenu"
 import "modules/notifications"
 import "modules/calendar"
 import "modules/status"
+import "modules/screenpad"
 
 // Minka shell entry point. One surface set per output; ShellLayout decides
 // which outputs show persistent surfaces (Duo mode pins them to the
@@ -33,6 +34,11 @@ ShellRoot {
             }
 
             Dock {
+                modelData: scope.modelData
+            }
+
+            // Duo-mode only; hides itself in the general layout.
+            SidePanel {
                 modelData: scope.modelData
             }
 
