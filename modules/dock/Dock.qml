@@ -56,7 +56,7 @@ PanelWindow {
 
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 8
+        anchors.bottomMargin: 0
         width: chipRow.width + 16
         height: 44
         radius: 10
