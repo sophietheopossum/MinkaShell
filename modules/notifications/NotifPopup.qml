@@ -44,12 +44,22 @@ PanelWindow {
 
                 Timer {
                     interval: 6000
-                    running: !cardArea.containsMouse
+                    // A notification carrying actions is a QUESTION, so it waits for an answer
+                    // instead of expiring — a 6s approval prompt is barely better than none.
+                    // Click the card to dismiss it without choosing.
+                    running: !cardArea.containsMouse && card.modelData.actions.length === 0
                     onTriggered: card.modelData.expire()
                 }
 
                 Column {
                     id: content
+
+                    // Above cardArea, which is declared later and fills the card. z orders only
+                    // among SIBLINGS, and cardArea's sibling is this Column — not the button Row
+                    // inside it, which is where this used to be and ordered nothing at all.
+                    // The Texts here accept no mouse events, so hover still reaches cardArea and
+                    // a click anywhere except a button still dismisses.
+                    z: 1
 
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -100,6 +110,54 @@ PanelWindow {
                         maximumLineCount: 4
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
+                    }
+
+                    // Action buttons. services/Notifs.qml has always set actionsSupported: true,
+                    // so senders were told these would render and then never saw them — an
+                    // approval prompt arrived as text with no way to answer it.
+                    // z: 1 is load-bearing: the card-filling MouseArea is declared AFTER this
+                    // Column, so it sits on top and would swallow every button press as a dismiss.
+                    Row {
+                        width: parent.width
+                        spacing: 6
+                        visible: card.modelData.actions.length > 0
+
+                        Repeater {
+                            model: card.modelData.actions
+
+                            delegate: Rectangle {
+                                id: btn
+
+                                required property var modelData
+
+                                implicitWidth: btnLabel.implicitWidth + 18
+                                implicitHeight: btnLabel.implicitHeight + 10
+                                radius: 6
+                                color: btnArea.containsMouse ? Theme.redDim : Theme.surfaceRaised
+                                border.width: 1
+                                border.color: btnArea.containsMouse ? Theme.red : Theme.line
+
+                                Text {
+                                    id: btnLabel
+
+                                    anchors.centerIn: parent
+                                    text: btn.modelData.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSize - 1
+                                    color: Theme.text
+                                    textFormat: Text.PlainText
+                                }
+
+                                MouseArea {
+                                    id: btnArea
+
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: btn.modelData.invoke()
+                                }
+                            }
+                        }
                     }
                 }
 
