@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Wayland
 import QtQuick
 import Quickshell.Services.Pipewire
+import Quickshell.Io
 import "../../services"
 
 // Audio status menu (network is out of scope — Sophie runs CMST).
@@ -34,6 +35,15 @@ PanelWindow {
     // Volume/mute properties are only valid while the nodes are bound.
     PwObjectTracker {
         objects: [root.sink, root.source].filter(node => node !== null)
+    }
+
+    // PipeWire and WirePlumber can be left holding stale device nodes after a
+    // crash or an OOM kill — duplicate sinks for one output, or playback stuck
+    // on the wrong device after a display is plugged in. Restarting the three
+    // user units clears that without touching the session.
+    Process {
+        id: audioRestart
+        command: ["systemctl", "--user", "restart", "wireplumber", "pipewire", "pipewire-pulse"]
     }
 
     component AudioControl: Column {
@@ -204,6 +214,31 @@ PanelWindow {
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.fontSize - 2
                 color: Theme.textFaint
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 28
+                radius: 6
+                color: restartArea.containsMouse ? Theme.purpleDim : Theme.surfaceRaised
+                border.width: 1
+                border.color: restartArea.containsMouse ? Theme.purple : Theme.line
+
+                Text {
+                    anchors.centerIn: parent
+                    text: audioRestart.running ? "restarting audio…" : "restart audio"
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.fontSize - 2
+                    color: restartArea.containsMouse ? Theme.text : Theme.textMuted
+                }
+
+                MouseArea {
+                    id: restartArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: !audioRestart.running
+                    onClicked: audioRestart.running = true
+                }
             }
         }
     }
