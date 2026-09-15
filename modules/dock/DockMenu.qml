@@ -6,8 +6,9 @@ import "../../services"
 // popup window is sized once at open and never resized while mapped, the
 // transparent remainder is the click-outside backdrop, and there is no
 // hover-timeout dismissal. Content is static (title + close), so this stays
-// simple. Anchored to the dock window's top edge with upward gravity, so
-// the menu opens above the dock, centered over the clicked item.
+// simple. Anchored above the dock with upward gravity in the general
+// layout, and below the ScreenPad strip with downward gravity in duo mode,
+// centered over the clicked item.
 PopupWindow {
     id: root
 
