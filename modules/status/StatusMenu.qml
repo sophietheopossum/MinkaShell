@@ -49,12 +49,14 @@ PanelWindow {
                 index[key] = groups.length;
                 groups.push({
                     key: key,
-                    name: rowTitle(key, props),
+                    name: "",
                     nodes: []
                 });
             }
             groups[index[key]].nodes.push(node);
         }
+        for (let g = 0; g < groups.length; g++)
+            groups[g].name = rowTitle(groups[g].key, groups[g].nodes);
         return groups;
     }
 
@@ -65,19 +67,22 @@ PanelWindow {
     property var recentApps: ({})
     readonly property int holdMs: 2500
 
+    // While the pointer is over the menu, rows neither leave nor reorder:
+    // new ones join at the bottom. Otherwise a row appearing above could
+    // slide a different app's toggle under a click. Tidied on leave.
+    property bool menuHovered: false
+    onMenuHoveredChanged: noteLiveApps()
+
     // The rows drawn: everything seen recently, in a stable name order.
     readonly property var appRows: {
         let rows = [];
         for (let key in recentApps)
             rows.push({
                 key: key,
-                name: recentApps[key].name
+                name: recentApps[key].name,
+                rank: recentApps[key].rank
             });
-        rows.sort((a, b) => {
-            let x = a.name.toLowerCase();
-            let y = b.name.toLowerCase();
-            return x < y ? -1 : x > y ? 1 : a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
-        });
+        rows.sort((a, b) => a.rank - b.rank);
         return rows;
     }
 
@@ -86,7 +91,7 @@ PanelWindow {
     // they get their own row.
     property var savedApps: []
     property bool listFresh: false
-    readonly property var idleMuted: savedApps.filter(a => a.mute && recentApps[a.key] === undefined)
+    readonly property var idleMuted: savedApps.filter(a => a.mute && a.block !== "stale" && recentApps[a.key] === undefined)
 
     // Shown once, after this opening's list has been read and every stream
     // has been bound (until then a playing app would look idle), then left
@@ -102,9 +107,10 @@ PanelWindow {
     property string unmuteKey: ""
     property string unmuteNote: ""
 
-    // Leaves room for the dock's exclusive zone on the ScreenPad (515 px
-    // tall), so the list scrolls instead of the menu running off the screen.
-    readonly property real appsMaxHeight: Math.max(120, modelData.height - (Theme.barHeight + 6) - 24 - devicesHeight - 56)
+    // Leaves room for the bar's and the dock's exclusive zones (the ScreenPad
+    // is only 515 px tall), so the list scrolls instead of the menu running
+    // off the screen.
+    readonly property real appsMaxHeight: Math.max(120, modelData.height - (Theme.barHeight + 6) - Theme.barHeight - 24 - devicesHeight - 56)
     readonly property real devicesHeight: (outControl.visible ? outControl.height + body.spacing : 0) + (micControl.visible ? micControl.height + body.spacing : 0) + (noDevices.visible ? noDevices.height + body.spacing : 0) + restartButton.height + body.spacing
 
     // Mirrors formKey() in WirePlumber's scripts/node/state-stream.lua,
@@ -124,17 +130,26 @@ PanelWindow {
     }
 
     // Named after what the key covers, not whichever stream came first: a
-    // shared key (Notifications, a generic media.name) is every app using it.
-    function rowTitle(key, props) {
+    // shared key (Notifications, a generic media.name, a library's fallback
+    // application.id) is every app using it. An id key borrows the friendlier
+    // application.name only when all of its streams agree on one.
+    function rowTitle(key, nodes) {
         if (key === notificationKey)
             return "Notifications";
         let rest = key.substring(keyPrefix.length);
         let colon = rest.indexOf(":");
         let kind = rest.substring(0, colon);
         let value = rest.substring(colon + 1);
-        if (kind === "application.id" && props["application.name"])
-            return props["application.name"];
-        return value;
+        if (kind === "application.id" && nodes.length > 0) {
+            let name = nodes[0].properties["application.name"] || "";
+            for (let i = 1; i < nodes.length; i++) {
+                if ((nodes[i].properties["application.name"] || "") !== name)
+                    name = "";
+            }
+            if (name !== "")
+                return name;
+        }
+        return value !== "" ? value : "(unnamed)";
     }
 
     function groupFor(key) {
@@ -175,7 +190,14 @@ PanelWindow {
         return parts.join(" · ");
     }
 
+    // Mute clicks not yet confirmed by WirePlumber's file: key -> { value,
+    // until }. A re-read that started before the click must not undo it.
+    property var pendingMutes: ({})
+
     function savedMute(key) {
+        let pending = pendingMutes[key];
+        if (pending !== undefined && pending.until > Date.now())
+            return pending.value;
         for (let i = 0; i < savedApps.length; i++) {
             if (savedApps[i].key === key)
                 return savedApps[i].mute;
@@ -183,36 +205,81 @@ PanelWindow {
         return false;
     }
 
-    // Reflect a mute click at once; the re-read of WirePlumber's file that
-    // confirms it lands a moment later.
+    // Reflect a mute click at once, until the file catches up (or 3 s pass).
     function noteSavedMute(key, value) {
-        savedApps = savedApps.map(a => a.key === key ? Object.assign({}, a, {
-            mute: value
-        }) : a);
+        let next = Object.assign({}, pendingMutes);
+        next[key] = {
+            value: value,
+            until: Date.now() + 3000
+        };
+        pendingMutes = next;
     }
 
-    // Adds every live app, keeps a stopped one until its hold runs out, and
-    // reassigns recentApps (redrawing the list) only when the set changed.
+    function takeSavedList(apps) {
+        savedApps = apps;
+        let next = {};
+        let changed = false;
+        for (let key in pendingMutes) {
+            let confirmed = apps.some(a => a.key === key && a.mute === pendingMutes[key].value);
+            if (confirmed || pendingMutes[key].until <= Date.now())
+                changed = true;
+            else
+                next[key] = pendingMutes[key];
+        }
+        if (changed)
+            pendingMutes = next;
+    }
+
+    // Adds every live app, keeps a stopped one until its hold runs out (or
+    // while the pointer is on the menu), and reassigns recentApps (redrawing
+    // the list) only when the rows changed. Rank is name order when settled,
+    // arrival order while hovered.
     function noteLiveApps() {
         let now = Date.now();
         let next = {};
         let changed = false;
+        let top = -1;
         for (let key in recentApps) {
-            if (groupFor(key) === null && recentApps[key].until <= now) {
+            if (!menuHovered && groupFor(key) === null && recentApps[key].until <= now) {
                 changed = true;
                 continue;
             }
-            next[key] = recentApps[key];
+            next[key] = {
+                name: recentApps[key].name,
+                until: recentApps[key].until,
+                rank: recentApps[key].rank
+            };
+            top = Math.max(top, recentApps[key].rank);
         }
         for (let i = 0; i < appGroups.length; i++) {
             let group = appGroups[i];
             let entry = next[group.key];
-            if (entry === undefined || entry.name !== group.name)
+            if (entry === undefined) {
                 changed = true;
-            next[group.key] = {
-                name: group.name,
-                until: now + holdMs
-            };
+                next[group.key] = {
+                    name: group.name,
+                    until: now + holdMs,
+                    rank: ++top
+                };
+                continue;
+            }
+            if (entry.name !== group.name && !menuHovered) {
+                changed = true;
+                entry.name = group.name;
+            }
+            entry.until = now + holdMs;
+        }
+        if (!menuHovered) {
+            let keys = Object.keys(next).sort((a, b) => {
+                let x = next[a].name.toLowerCase();
+                let y = next[b].name.toLowerCase();
+                return x < y ? -1 : x > y ? 1 : a < b ? -1 : a > b ? 1 : 0;
+            });
+            for (let r = 0; r < keys.length; r++) {
+                if (next[keys[r]].rank !== r)
+                    changed = true;
+                next[keys[r]].rank = r;
+            }
         }
         if (changed)
             recentApps = next;
@@ -266,6 +333,8 @@ PanelWindow {
             listFresh = false;
             idleShown = false;
             unmuteNote = "";
+            recentApps = {};
+            pendingMutes = {};
         }
     }
 
@@ -303,11 +372,17 @@ PanelWindow {
         command: ["python3", root.muteHelper, "list"]
         stdout: StdioCollector {
             onStreamFinished: {
+                // A read that finishes after the menu closed belongs to no
+                // opening; the next one starts its own.
+                if (!root.open)
+                    return;
+                let apps = [];
                 try {
-                    root.savedApps = JSON.parse(this.text).apps || [];
+                    apps = JSON.parse(this.text).apps || [];
                 } catch (e) {
-                    root.savedApps = [];
+                    apps = [];
                 }
+                root.takeSavedList(apps);
                 root.listFresh = true;
             }
         }
@@ -321,6 +396,8 @@ PanelWindow {
         command: ["python3", root.muteHelper, "unmute", root.unmuteKey]
         stdout: StdioCollector {
             onStreamFinished: {
+                if (!root.open)
+                    return;
                 try {
                     let reply = JSON.parse(this.text);
                     root.unmuteNote = reply.ok ? "" : reply.message;
@@ -329,7 +406,10 @@ PanelWindow {
                 }
             }
         }
-        onExited: savedList.running = true
+        onExited: {
+            if (root.open)
+                savedList.running = true;
+        }
     }
 
     // WirePlumber rewrites its state file whenever a saved volume or mute
@@ -402,6 +482,12 @@ PanelWindow {
         // The app's saved state is muted, so a stream that has just opened
         // is about to be muted by WirePlumber even if it isn't yet.
         property bool forceMuted: false
+        // App rows sit in a scrolling list; there the wheel scrolls the list
+        // instead of changing the volume of whichever slider it lands on.
+        property bool wheelAdjusts: true
+        // A drag that carries on through a gap between streams lands here and
+        // is applied to the next stream as soon as it arrives.
+        property real pendingVolume: -1
         signal muteSet(bool value)
 
         readonly property var lead: nodes.length > 0 ? nodes[0] : null
@@ -417,36 +503,62 @@ PanelWindow {
             if (present)
                 lastMuted = muted;
         }
+        onPresentChanged: {
+            if (present && pendingVolume >= 0) {
+                let value = pendingVolume;
+                pendingVolume = -1;
+                setVolume(value);
+            }
+        }
         onVolumeChanged: {
             if (present)
                 lastVolume = volume;
         }
 
         function setMuted(value) {
+            let changed = false;
             for (let i = 0; i < nodes.length; i++) {
-                if (nodes[i].audio !== null)
-                    nodes[i].audio.muted = value;
+                let audio = nodes[i].audio;
+                if (audio !== null && audio.muted !== value) {
+                    audio.muted = value;
+                    changed = true;
+                }
+            }
+            // Only the SAVED state was muted (the live streams already play):
+            // setting what is already set never reaches WirePlumber, so flip
+            // one stream there and back to make it save the unmute.
+            if (!changed && control.forceMuted && !value && nodes.length > 0 && nodes[0].audio !== null) {
+                nodes[0].audio.muted = true;
+                nodes[0].audio.muted = false;
             }
             control.muteSet(value);
         }
 
         // WirePlumber saves each stream's whole state when its volume moves,
-        // mute included, so bring every stream to the row's mute first:
-        // otherwise the last stream it processes decides the app's mute.
+        // mute included, so bring every stream to one mute first: otherwise
+        // the last stream it processes decides the app's mute. That is the
+        // streams' own state, not a saved mute they have already left.
         function setVolume(value) {
             let clamped = Math.max(0, Math.min(1, value));
+            if (nodes.length === 0) {
+                lastVolume = clamped;
+                pendingVolume = clamped;
+                return;
+            }
+            let liveMuted = nodes.some(n => n.audio !== null && n.audio.muted);
             for (let i = 0; i < nodes.length; i++) {
                 let audio = nodes[i].audio;
                 if (audio === null)
                     continue;
-                if (audio.muted !== control.muted)
-                    audio.muted = control.muted;
+                if (audio.muted !== liveMuted)
+                    audio.muted = liveMuted;
                 audio.volume = clamped;
             }
         }
 
         visible: present || held
-        enabled: present
+        // Stays enabled while held so a slider drag survives the gap; only
+        // the mute toggle waits for a stream.
         opacity: present ? 1 : 0.6
         spacing: 6
 
@@ -496,6 +608,7 @@ PanelWindow {
 
             MuteToggle {
                 anchors.verticalCenter: parent.verticalCenter
+                enabled: control.present
                 muted: control.muted
                 onClicked: control.setMuted(!control.muted)
             }
@@ -556,6 +669,10 @@ PanelWindow {
                             apply(mouse.x);
                     }
                     onWheel: wheel => {
+                        if (!control.wheelAdjusts) {
+                            wheel.accepted = false;
+                            return;
+                        }
                         const step = wheel.angleDelta.y > 0 ? 0.05 : -0.05;
                         control.setVolume(control.volume + step);
                     }
@@ -580,6 +697,10 @@ PanelWindow {
         color: Theme.barBg
         border.width: 1
         border.color: Theme.line
+
+        HoverHandler {
+            onHoveredChanged: root.menuHovered = hovered
+        }
 
         Column {
             id: body
@@ -693,6 +814,7 @@ PanelWindow {
                             nodes: group ? group.nodes : []
                             held: group === null
                             forceMuted: root.savedMute(modelData.key)
+                            wheelAdjusts: !appsView.interactive
                             onMuteSet: value => root.noteSavedMute(appRow.modelData.key, value)
                         }
                     }
