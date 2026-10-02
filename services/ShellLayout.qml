@@ -11,7 +11,8 @@ import QtQuick
 // The mode follows `shell.layout` in minka-settings.json ("duo" | "general",
 // switched live from MinkaConf's layout page); absent or "auto" falls back
 // to hardware detection, which is also the effective first-run default when
-// no settings file exists yet.
+// no settings file exists yet. `workspaces.enabled` (virtual desktops, same
+// page) is read here too, so the bar can hide its desktop pills.
 Singleton {
     id: root
 
@@ -29,6 +30,10 @@ Singleton {
     // Absolute path of the wallpaper image, or "" for none. Set by
     // MinkaConf's wallpaper page (shell.wallpaper in minka-settings.json).
     property string wallpaper: ""
+
+    // workspaces.enabled in minka-settings.json. Only an explicit false turns
+    // desktops off, the same rule ShojiWM uses.
+    property bool workspacesEnabled: true
 
     readonly property bool duoMode: configuredLayout === "duo" ? true
                                   : configuredLayout === "general" ? false
@@ -57,9 +62,12 @@ Singleton {
                     layout === "duo" || layout === "general" ? layout : "auto";
                 root.wallpaper =
                     typeof shell.wallpaper === "string" ? shell.wallpaper : "";
+                root.workspacesEnabled =
+                    !(data && data.workspaces && data.workspaces.enabled === false);
             } catch (e) {
                 root.configuredLayout = "auto";
                 root.wallpaper = "";
+                root.workspacesEnabled = true;
             }
         }
     }

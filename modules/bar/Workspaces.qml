@@ -14,7 +14,12 @@ Row {
     spacing: 5
 
     Repeater {
-        model: root.monitor ? root.monitor.workspaces : []
+        id: pills
+        // Desktops off: no pills. Fails open while the compositor still
+        // reports several desktops (e.g. before the config is reloaded).
+        model: !root.monitor ? []
+             : ShellLayout.workspacesEnabled || root.monitor.workspaces.length > 1
+               ? root.monitor.workspaces : []
 
         delegate: Rectangle {
             id: pill
