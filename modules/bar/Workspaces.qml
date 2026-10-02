@@ -46,7 +46,8 @@ Row {
             Text {
                 id: label
                 anchors.centerIn: parent
-                text: pill.modelData.index + 1
+                // Compositor desktop indices are already 1-based.
+                text: pill.modelData.index
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.fontSize - 1
                 color: pill.active ? Theme.ground
@@ -73,7 +74,7 @@ Row {
     Text {
         visible: root.monitor !== null
         anchors.verticalCenter: parent.verticalCenter
-        leftPadding: 4
+        leftPadding: pills.count > 0 ? 4 : 0
         text: {
             const ws = root.monitor
                 ? root.monitor.workspaces.find(w => w.active)
@@ -82,5 +83,14 @@ Row {
         }
         font.pixelSize: Theme.fontSize
         color: Theme.purple
+
+        // With the pills hidden (desktops off) this is the mouse's way to
+        // toggle tiling; with pills it stays inert, as before.
+        MouseArea {
+            anchors.fill: parent
+            enabled: pills.count === 0
+            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+            onClicked: ShojiIpc.toggleTiling(root.monitorName)
+        }
     }
 }
