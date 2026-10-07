@@ -51,7 +51,7 @@ PanelWindow {
                 width: 24
                 height: 22
                 radius: 5
-                color: MenuState.isOpen("start", root.modelData.name) ? Theme.redDim
+                color: MenuState.isOpen("start", root.modelData?.name ?? "") ? Theme.redDim
                      : startArea.containsMouse ? Theme.surfaceRaised
                      : "transparent"
 
@@ -72,17 +72,17 @@ PanelWindow {
 
             Workspaces {
                 anchors.verticalCenter: parent.verticalCenter
-                monitorName: root.modelData.name
+                monitorName: root.modelData?.name ?? ""
             }
 
             FocusedTitle {
                 anchors.verticalCenter: parent.verticalCenter
-                monitorName: root.modelData.name
+                monitorName: root.modelData?.name ?? ""
             }
 
             WindowControls {
                 anchors.verticalCenter: parent.verticalCenter
-                monitorName: root.modelData.name
+                monitorName: root.modelData?.name ?? ""
             }
         }
 
@@ -93,7 +93,7 @@ PanelWindow {
             width: clock.implicitWidth + 16
             height: 22
             radius: 5
-            color: MenuState.isOpen("calendar", root.modelData.name) ? Theme.redDim
+            color: MenuState.isOpen("calendar", root.modelData?.name ?? "") ? Theme.redDim
                  : clockArea.containsMouse ? Theme.surfaceRaised
                  : "transparent"
 
@@ -124,7 +124,7 @@ PanelWindow {
             // applets.
             SystemTrayWidget {
                 anchors.verticalCenter: parent.verticalCenter
-                monitorName: root.modelData.name
+                monitorName: root.modelData?.name ?? ""
             }
 
             // IPC health: red until the first workspace view arrives on the

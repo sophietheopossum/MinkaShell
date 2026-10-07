@@ -18,7 +18,7 @@ PanelWindow {
 
     required property var modelData
 
-    readonly property bool open: MenuState.isOpen("status", modelData.name)
+    readonly property bool open: MenuState.isOpen("status", modelData?.name ?? "")
     readonly property var sink: Pipewire.defaultAudioSink
     readonly property var source: Pipewire.defaultAudioSource
 
@@ -110,7 +110,7 @@ PanelWindow {
     // Leaves room for the bar's and the dock's exclusive zones (the ScreenPad
     // is only 515 px tall), so the list scrolls instead of the menu running
     // off the screen.
-    readonly property real appsMaxHeight: Math.max(120, modelData.height - (Theme.barHeight + 6) - Theme.barHeight - 24 - devicesHeight - 56)
+    readonly property real appsMaxHeight: Math.max(120, (modelData?.height ?? 0) - (Theme.barHeight + 6) - Theme.barHeight - 24 - devicesHeight - 56)
     readonly property real devicesHeight: (outControl.visible ? outControl.height + body.spacing : 0) + (micControl.visible ? micControl.height + body.spacing : 0) + (noDevices.visible ? noDevices.height + body.spacing : 0) + restartButton.height + body.spacing
 
     // Mirrors formKey() in WirePlumber's scripts/node/state-stream.lua,

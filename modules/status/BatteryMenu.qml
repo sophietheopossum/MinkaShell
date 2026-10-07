@@ -11,7 +11,7 @@ PanelWindow {
 
     required property var modelData
 
-    readonly property bool open: MenuState.isOpen("battery", modelData.name)
+    readonly property bool open: MenuState.isOpen("battery", modelData?.name ?? "")
     readonly property var device: UPower.displayDevice
     readonly property bool present: device !== null && device.isLaptopBattery
     readonly property bool charging: present && device.state === UPowerDeviceState.Charging

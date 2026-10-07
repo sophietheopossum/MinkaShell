@@ -17,7 +17,7 @@ PanelWindow {
 
     required property var modelData
 
-    readonly property bool open: MenuState.isOpen("start", modelData.name)
+    readonly property bool open: MenuState.isOpen("start", modelData?.name ?? "")
     property string query: ""
 
     // Search across everything a user might know the app by: display name,

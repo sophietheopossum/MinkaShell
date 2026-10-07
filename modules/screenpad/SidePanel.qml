@@ -65,11 +65,11 @@ PanelWindow {
 
             // ── focused window: icon + title, then its controls ──────────
             FocusedTitle {
-                monitorName: root.modelData.name
+                monitorName: root.modelData?.name ?? ""
             }
 
             WindowControls {
-                monitorName: root.modelData.name
+                monitorName: root.modelData?.name ?? ""
             }
 
             Rectangle {
@@ -80,7 +80,7 @@ PanelWindow {
 
             // ── system tray (volume and battery ride along as applets) ───
             SystemTrayWidget {
-                monitorName: root.modelData.name
+                monitorName: root.modelData?.name ?? ""
             }
 
             Rectangle {
@@ -94,7 +94,7 @@ PanelWindow {
                 width: clock.implicitWidth + 16
                 height: 22
                 radius: 5
-                color: MenuState.isOpen("calendar", root.modelData.name) ? Theme.redDim
+                color: MenuState.isOpen("calendar", root.modelData?.name ?? "") ? Theme.redDim
                      : clockArea.containsMouse ? Theme.surfaceRaised
                      : "transparent"
 
@@ -112,7 +112,7 @@ PanelWindow {
             }
 
             Workspaces {
-                monitorName: root.modelData.name
+                monitorName: root.modelData?.name ?? ""
             }
 
             SysUsage {}
@@ -133,7 +133,7 @@ PanelWindow {
                 width: 24
                 height: 22
                 radius: 5
-                color: MenuState.isOpen("start", root.modelData.name) ? Theme.redDim
+                color: MenuState.isOpen("start", root.modelData?.name ?? "") ? Theme.redDim
                      : startArea.containsMouse ? Theme.surfaceRaised
                      : "transparent"
 

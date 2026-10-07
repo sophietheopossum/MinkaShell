@@ -13,7 +13,7 @@ PanelWindow {
 
     required property var modelData
 
-    readonly property bool open: MenuState.isOpen("calendar", modelData.name)
+    readonly property bool open: MenuState.isOpen("calendar", modelData?.name ?? "")
 
     // First day of the displayed month.
     property date shown: new Date()

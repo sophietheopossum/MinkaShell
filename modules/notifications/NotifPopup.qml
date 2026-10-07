@@ -19,7 +19,7 @@ PanelWindow {
     margins.top: Theme.barHeight + 6
     margins.right: 8
     implicitWidth: 340
-    implicitHeight: Math.min(cards.implicitHeight, modelData.height - Theme.barHeight - 24)
+    implicitHeight: Math.max(0, Math.min(cards.implicitHeight, (modelData?.height ?? 0) - Theme.barHeight - 24))
     exclusiveZone: 0
     color: "transparent"
 

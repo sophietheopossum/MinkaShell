@@ -37,7 +37,7 @@ PanelWindow {
         if (!view)
             return { ids: ids, byId: byId, groupOf: groupOf };
         for (const monitor of view.monitors) {
-            if (!ShellLayout.duoMode && monitor.name !== root.modelData.name)
+            if (!ShellLayout.duoMode && monitor.name !== (root.modelData?.name ?? ""))
                 continue;
             for (const ws of monitor.workspaces) {
                 for (const win of ws.windows) {
@@ -129,7 +129,7 @@ PanelWindow {
     // to this window's width, so going through it would be a binding loop.
     // Capped at the output width so a long window list overflows into the
     // scroll arrows rather than growing the dock off the side of the screen.
-    implicitWidth: Math.min(chipRow.width + 32, root.modelData.width)
+    implicitWidth: Math.min(chipRow.width + 32, root.modelData?.width ?? 0)
     // Exactly the dock body: no padding on any edge, so the dock sits flush
     // against the bottom of the screen and maximized windows come right up to
     // its top edge. Keep this in step with dockBody's height.
@@ -458,7 +458,7 @@ PanelWindow {
         // overflows into the arrows instead of running off the screen.
         width: ShellLayout.duoMode
              ? parent.width
-             : Math.min(chipRow.width + 16, root.modelData.width - 40)
+             : Math.min(chipRow.width + 16, (root.modelData?.width ?? 0) - 40)
         height: 44
         radius: ShellLayout.duoMode ? 0 : 10
         color: Theme.barBg
