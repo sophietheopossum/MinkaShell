@@ -1,7 +1,8 @@
+pragma ComponentBehavior: Bound
+
 import Quickshell
 import Quickshell.Services.SystemTray
 import QtQuick
-import "../../services"
 
 // StatusNotifier tray
 // includes the native volume/battery applets, presented as one cluster.

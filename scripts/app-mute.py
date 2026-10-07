@@ -314,7 +314,7 @@ def main(argv):
         return cmd_list()
     if len(argv) == 3 and argv[1] == "unmute":
         return cmd_unmute(argv[2])
-    sys.stderr.write(__doc__)
+    sys.stderr.write(__doc__ or "")
     return 2
 
 

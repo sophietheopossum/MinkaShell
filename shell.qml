@@ -1,5 +1,4 @@
 import Quickshell
-import "services"
 import "modules/bar"
 import "modules/wallpaper"
 import "modules/dock"

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import Quickshell
 import QtQuick
 import "../../services"
@@ -221,7 +223,7 @@ PopupWindow {
 
                                 Image {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    visible: source != ""
+                                    visible: source.toString() !== ""
                                     source: entryBlock.modelData.icon || ""
                                     width: 14
                                     height: 14
