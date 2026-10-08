@@ -85,7 +85,7 @@ PanelWindow {
     // (a screen unplugged mid-drop), returns without touching root.
     property var commitTicket: null
     property bool reloadHintShown: false
-    // Bumped when Quickshell rescans desktop entries: chips outlive
+    // Bumped when the set of desktop entries changes: chips outlive
     // broadcasts now, so their icon lookup has to hear about new entries.
     property int entriesRevision: 0
 
@@ -148,12 +148,24 @@ PanelWindow {
             root.commitTicket.live = false;
     }
 
+    // Re-run the chips' entry lookups only when the set of entries changes.
+    // Quickshell emits applicationsChanged after every rescan, and its monitor
+    // rescans on any change in $HOME, / or /usr, so bumping on that signal
+    // redid every chip's heuristicLookup about once a minute for nothing: a
+    // 35-46 ms GUI stall each time (measured 8/10/2026). Unchanged entries stay
+    // the same objects across rescans, so their own property changes still
+    // reach the chips through bindings. One rescan can insert and remove
+    // several entries; callLater folds those into a single bump.
     Connections {
-        target: DesktopEntries
+        target: DesktopEntries.applications
 
-        function onApplicationsChanged() {
-            root.entriesRevision++;
+        function onValuesChanged() {
+            Qt.callLater(root.bumpEntriesRevision);
         }
+    }
+
+    function bumpEntriesRevision() {
+        root.entriesRevision++;
     }
 
     Connections {
