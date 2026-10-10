@@ -728,7 +728,7 @@ PanelWindow {
                                 ? (dockItem.win.appId || "")
                                 : ""
                             readonly property var entry: {
-                                root.entriesRevision;
+                                void root.entriesRevision;
                                 return dockItem.appId ? DesktopEntries.heuristicLookup(dockItem.appId) : null;
                             }
                             readonly property bool isFocused: dockItem.win !== null
