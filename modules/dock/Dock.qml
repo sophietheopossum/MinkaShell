@@ -438,16 +438,17 @@ PanelWindow {
             root.dragId = "";
     }
 
-    // Only reachable if the ShojiWM config was not reloaded after
-    // windows.reorder landed; one notification per shell generation.
+    // Only reachable if the running ShojiWM predates windows.reorder. Its
+    // config is compiled in, so that takes an install and a new session;
+    // one notification per shell generation.
     function reportReloadNeeded() {
-        console.warn("dock: ShojiWM has no windows.reorder yet; reload its config with Super+Shift+R");
+        console.warn("dock: the running ShojiWM has no windows.reorder; install the current build and start a new session");
         if (root.reloadHintShown)
             return;
         root.reloadHintShown = true;
         Quickshell.execDetached(["notify-send", "--app-name=MinkaShell",
-            "Dock order needs a ShojiWM reload",
-            "Press Super+Shift+R to load windows.reorder, then drag again."]);
+            "Dock order needs a newer ShojiWM",
+            "Install the current build and start a new session to get windows.reorder."]);
     }
 
     Rectangle {
