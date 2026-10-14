@@ -55,7 +55,7 @@ Singleton {
     // Dock drag-to-reorder: place `windowId` directly before `beforeId` in its
     // workspace's window order (null = last). onResult(result, error) gets
     // {ok, changed}, or "unknown method: windows.reorder" from a ShojiWM
-    // config that predates it (Super+Shift+R loads it).
+    // config that predates it (an install and a new session load it).
     function reorderWindow(windowId, beforeId, onResult) {
         request("windows.reorder", { windowId: windowId, beforeId: beforeId }, onResult);
     }
