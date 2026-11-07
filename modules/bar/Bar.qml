@@ -127,6 +127,11 @@ PanelWindow {
                 monitorName: root.modelData?.name ?? ""
             }
 
+            // Pending system updates (MinkaSyu). Hidden at zero.
+            Updates {
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
             // IPC health: red until the first workspace view arrives on the
             // current connection. A keeper — Sophie wants this in the final
             // release as a design detail.

@@ -26,6 +26,7 @@ Singleton {
     readonly property color redDim: Proustite.redDim
     readonly property color purple: Proustite.purple
     readonly property color purpleDim: Proustite.purpleDim
+    readonly property color warnAmber: Proustite.warnAmber
 
     // bar
     readonly property color barBg: Qt.rgba(0.039, 0.027, 0.035, 0.92)

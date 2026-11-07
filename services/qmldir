@@ -3,3 +3,4 @@ singleton ShellLayout 1.0 ShellLayout.qml
 singleton Theme 1.0 Theme.qml
 singleton MenuState 1.0 MenuState.qml
 singleton Notifs 1.0 Notifs.qml
+singleton SyuState 1.0 SyuState.qml

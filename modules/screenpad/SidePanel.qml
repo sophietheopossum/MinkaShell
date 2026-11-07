@@ -116,6 +116,9 @@ PanelWindow {
             }
 
             SysUsage {}
+
+            // Pending system updates (MinkaSyu). Hidden at zero.
+            Updates {}
         }
 
         // ── start menu + IPC health, pinned to the bottom ────────────────
