@@ -599,8 +599,13 @@ pub fn tray_cluster(state: AppState, output: Output) -> Div {
         .gap(6.0_f32)
         .child(dyn_view(move || {
             let mut row = div().flex().flex_row().items_center().gap(6.0_f32);
+            // One icon an item, even if it is registered twice (by itself
+            // under one name and on its behalf under another).
+            let mut shown = std::collections::HashSet::new();
             for item in tray().items() {
-                row = row.child(tray_item_view(output_items.clone(), item));
+                if shown.insert(item.key()) {
+                    row = row.child(tray_item_view(output_items.clone(), item));
+                }
             }
             row
         }))

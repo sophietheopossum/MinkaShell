@@ -6,6 +6,7 @@
 use crate::instance::InstanceGuard;
 use crate::ipc::{IpcController, IpcNews, WorkspaceView};
 use crate::settings::{self, Settings, SyuState};
+use crate::tray_rescue;
 use anti_webui::prelude::*;
 use anti_webui::shell::prelude::*;
 use std::cell::{Cell, RefCell};
@@ -46,6 +47,10 @@ pub struct AppState {
     pub view: Signal<WorkspaceView>,
     pub ipc_ready: Signal<bool>,
     pub ipc_connected: Signal<bool>,
+    /// The window list has arrived once, or has been waited for long enough.
+    /// Until then it is not known whether there is a dock to put the Duo
+    /// side column under, and the column waits.
+    pub windows_known: Signal<bool>,
     pub settings: Signal<Settings>,
     pub syu: Signal<SyuState>,
     /// At most one menu open shell-wide: (screen name, kind).
@@ -61,6 +66,8 @@ pub struct AppState {
     settings_mtime: Rc<Cell<Option<SystemTime>>>,
     syu_mtime: Rc<Cell<Option<SystemTime>>>,
     prev_cpu: Rc<Cell<Option<(u64, u64)>>>,
+    /// The tray items written down for the next shell (see `tray_rescue`).
+    tray_saved: Rc<RefCell<tray_rescue::Saved>>,
     _guard: Rc<InstanceGuard>,
 }
 
@@ -71,6 +78,7 @@ impl AppState {
             view: signal(WorkspaceView::default()),
             ipc_ready: signal(false),
             ipc_connected: signal(false),
+            windows_known: signal(false),
             settings: signal(Settings::load()),
             syu: signal(SyuState::load()),
             open_menu: signal(None),
@@ -83,6 +91,7 @@ impl AppState {
             settings_mtime: Rc::new(Cell::new(None)),
             syu_mtime: Rc::new(Cell::new(None)),
             prev_cpu: Rc::new(Cell::new(None)),
+            tray_saved: Rc::new(RefCell::new(Vec::new())),
             _guard: Rc::new(guard),
         }
     }
@@ -152,6 +161,11 @@ impl AppState {
             Err(e) => eprintln!("minkashell: notifications unavailable: {e}"),
         }
         self.ipc.ensure_started();
+        // Before the first tick can write the file: what the last shell
+        // showed, for the watcher that inherited its name to be told of.
+        let saved = tray_rescue::load();
+        *self.tray_saved.borrow_mut() = saved.clone();
+        tray_rescue::rescue_in_background(saved);
         self.poll_settings(true);
         self.poll_syu(true);
         self.sample_sys_usage();
@@ -175,6 +189,7 @@ impl AppState {
                 IpcNews::View(view) => {
                     self.view.set_if_changed(view);
                     self.ipc_ready.set_if_changed(true);
+                    self.windows_known.set_if_changed(true);
                 }
                 IpcNews::UiStartMenu { connector, action } => {
                     self.toggle_menu(MenuKind::Start, connector.as_deref(), Some(&action));
@@ -198,13 +213,29 @@ impl AppState {
 
         if tick.is_multiple_of(8) {
             self.ipc.probe_if_idle();
+            // Two seconds without a window list: the compositor's socket is
+            // not answering, and the shell does without knowing.
+            self.windows_known.set_if_changed(true);
         }
         if tick.is_multiple_of(4) {
             self.poll_settings(false);
             self.poll_syu(false);
+            self.save_tray_items();
         }
         if tick.is_multiple_of(12) {
             self.sample_sys_usage();
+        }
+    }
+
+    /// Writes down the tray's items when there is one the file lacks.
+    fn save_tray_items(&self) {
+        let now = tray_rescue::snapshot(&tray().items());
+        let mut saved = self.tray_saved.borrow_mut();
+        let merged = tray_rescue::merge(&saved, now);
+        // Only once it is in the file: a write that failed is tried again
+        // at the next tick, where `merged` comes out the same.
+        if merged != *saved && tray_rescue::store(&merged) {
+            *saved = merged;
         }
     }
 

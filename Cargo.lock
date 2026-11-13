@@ -1218,6 +1218,7 @@ dependencies = [
  "anti-webui",
  "calloop",
  "serde_json",
+ "zbus",
 ]
 
 [[package]]
