@@ -146,9 +146,17 @@ fn workspace_pill(
                 }))
             }
         })
-        .on_click(move |e: &PointerEvent| match e.button {
-            Some(PointerButton::Middle) => click_state.ipc.toggle_tiling(&monitor_click),
-            _ => click_state.ipc.activate_workspace(&monitor_click, index),
+        // As in the DOM, `on_click` is the primary button only: the middle and
+        // right buttons arrive as aux clicks.
+        .on_click({
+            let state = click_state.clone();
+            let monitor = monitor_click.clone();
+            move |_| state.ipc.activate_workspace(&monitor, index)
+        })
+        .on_aux_click(move |e: &PointerEvent| {
+            if e.button == Some(PointerButton::Middle) {
+                click_state.ipc.toggle_tiling(&monitor_click);
+            }
         })
         .child(ui_text(
             index.to_string(),
@@ -435,11 +443,11 @@ pub fn volume_widget(state: AppState, monitor: String) -> Div {
             .flex()
             .items_center()
             .cursor(CursorIcon::Pointer)
-            .on_click(move |e: &PointerEvent| match e.button {
-                Some(PointerButton::Middle) => {
+            .on_click(move |_| menu_state.toggle_menu(MenuKind::Status, Some(&monitor_menu), None))
+            .on_aux_click(move |e: &PointerEvent| {
+                if e.button == Some(PointerButton::Middle) {
                     let _ = mute_sink.set_muted(!mute_sink.muted);
                 }
-                _ => menu_state.toggle_menu(MenuKind::Status, Some(&monitor_menu), None),
             })
             .on_scroll(move |e: &ScrollEvent| {
                 let step = if e.delta_y < 0.0 { 0.05 } else { -0.05 };
@@ -540,26 +548,28 @@ fn tray_item_view(output: Output, item: anti_webui::shell::TrayItem) -> Div {
         .h(18.0)
         .cursor(CursorIcon::Pointer)
         .dyn_style(move |s| s.opacity(if hovered.get() { 1.0 } else { 0.85_f32 }))
-        .on_click(move |e: &PointerEvent| {
-            let x = ox + e.position.x as i32;
-            let y = oy + e.position.y as i32;
-            match e.button {
-                Some(PointerButton::Middle) => {
-                    let _ = click_item.secondary_activate(x, y);
-                }
-                Some(PointerButton::Secondary) => {
-                    if click_item.has_menu {
-                        menu_open.set(!menu_open.get_untracked());
-                    }
-                }
-                _ => {
-                    if click_item.item_is_menu && click_item.has_menu {
-                        menu_open.set(!menu_open.get_untracked());
-                    } else {
-                        let _ = click_item.activate(x, y);
-                    }
+        .on_click({
+            let item = click_item.clone();
+            move |e: &PointerEvent| {
+                if item.item_is_menu && item.has_menu {
+                    menu_open.set(!menu_open.get_untracked());
+                } else {
+                    let _ = item.activate(ox + e.position.x as i32, oy + e.position.y as i32);
                 }
             }
+        })
+        // The middle and right buttons are aux clicks, not clicks.
+        .on_aux_click(move |e: &PointerEvent| match e.button {
+            Some(PointerButton::Middle) => {
+                let _ = click_item
+                    .secondary_activate(ox + e.position.x as i32, oy + e.position.y as i32);
+            }
+            Some(PointerButton::Secondary) => {
+                if click_item.has_menu {
+                    menu_open.set(!menu_open.get_untracked());
+                }
+            }
+            _ => {}
         });
     let icon = if item.icon.best(48).is_some() {
         let best = item.clone();

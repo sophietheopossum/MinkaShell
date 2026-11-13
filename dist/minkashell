@@ -1,5 +1,6 @@
 #!/bin/sh
-# MinkaShell launcher: runs the session shell with its output captured.
+# MinkaShell launcher: runs the session shell with its output captured, and
+# starts the AntiWebUI shell again if it dies.
 #
 # The compositor config starts this with the shell's directory as its
 # argument, so the same script serves a repo checkout and an installed tree.
@@ -15,6 +16,14 @@
 # Output is appended to ~/.local/state/minka/minkashell.log, so what a shell
 # printed before it died is still there after the next login. (The old
 # `> /tmp/minkashell.log` redirect emptied the log at every session start.)
+#
+# Restarting: the compositor starts the shell once per session, and where a
+# script error left the Quickshell shell running, a Rust panic or a Wayland or
+# GPU error ends the AntiWebUI one. So this script stays as its parent and
+# starts it again after any exit but a clean one (status 0 is a quit, or a
+# second launch finding the first). Three such exits inside a minute hand the
+# session to the Quickshell shell instead of looping. To stop the shell for
+# good, signal this script, not the binary: it passes the signal on and exits.
 set -eu
 
 CONFIG="${1:-/usr/share/minka/MinkaShell}"
@@ -39,10 +48,60 @@ if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 2097152 ]; then
     mv -f "$LOG" "$LOG.1"
 fi
 
-printf '\n=== MinkaShell starting (%s): %s ===\n' "$FRONTEND" "$(date -Is)" >> "$LOG"
+note() {
+    printf '\n=== MinkaShell %s: %s ===\n' "$1" "$(date -Is)" >> "$LOG"
+}
 
-case "$FRONTEND" in
-    antiwebui) exec "$BIN" >> "$LOG" 2>&1 ;;
+quickshell() {
     # --log-times so the shell's lines can be matched against kernel events.
-    *) exec qs --log-times -p "$CONFIG" >> "$LOG" 2>&1 ;;
+    exec qs --log-times -p "$CONFIG" >> "$LOG" 2>&1
+}
+
+note "starting ($FRONTEND)"
+[ "$FRONTEND" = antiwebui ] || quickshell
+
+# The compositor's socket: once it is gone the session is over, and a shell
+# that exited because of that must not be started again.
+case "${WAYLAND_DISPLAY:-wayland-0}" in
+    /*) SOCKET="${WAYLAND_DISPLAY}" ;;
+    *) SOCKET="${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY:-wayland-0}" ;;
 esac
+
+child=
+stop() {
+    trap - TERM INT HUP
+    if [ -n "$child" ]; then
+        kill -TERM "$child" 2> /dev/null || true
+        wait "$child" 2> /dev/null || true
+    fi
+    exit 0
+}
+trap stop TERM INT HUP
+
+failures=0
+window=0
+while :; do
+    "$BIN" >> "$LOG" 2>&1 &
+    child=$!
+    status=0
+    wait "$child" || status=$?
+    child=
+    [ "$status" -ne 0 ] || exit 0
+
+    if [ ! -S "$SOCKET" ]; then
+        note "exited with status $status and the compositor is gone, not restarting"
+        exit "$status"
+    fi
+    now=$(date +%s)
+    if [ $((now - window)) -gt 60 ]; then
+        window=$now
+        failures=0
+    fi
+    failures=$((failures + 1))
+    if [ "$failures" -ge 3 ]; then
+        note "exited with status $status, the third time in a minute: starting the Quickshell shell instead"
+        quickshell
+    fi
+    note "exited with status $status, restarting"
+    sleep 1
+done

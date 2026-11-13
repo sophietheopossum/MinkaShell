@@ -48,14 +48,20 @@ pub struct Plan {
     pub group_end: f32,
 }
 
+// The reorder math below never indexes on trust. The window list changes
+// under a held pointer (a window opens or closes mid-drag), so an index or id
+// from one list can meet another list, and a panic here ends the whole shell.
+// A stale input gives no plan, no shift or no move instead.
+
+/// The run of neighbours in `i`'s group. `i` must be inside `ids`.
 fn group_span(ids: &[String], group_of: &HashMap<String, String>, i: usize) -> (usize, usize) {
-    let key = &group_of[&ids[i]];
+    let key = group_of.get(&ids[i]);
     let mut start = i;
     let mut end = i;
-    while start > 0 && group_of[&ids[start - 1]] == *key {
+    while start > 0 && group_of.get(&ids[start - 1]) == key {
         start -= 1;
     }
-    while end < ids.len() - 1 && group_of[&ids[end + 1]] == *key {
+    while end + 1 < ids.len() && group_of.get(&ids[end + 1]) == key {
         end += 1;
     }
     (start, end)
@@ -81,6 +87,9 @@ pub fn live_plan(
     view_hi: f32,
     cancelled: bool,
 ) -> Option<Plan> {
+    if slots.len() != ids.len() {
+        return None;
+    }
     let from = ids.iter().position(|i| i == drag_id)?;
     let w = slots.get(from)?.w;
     let (start, end) = group_span(ids, group_of, from);
@@ -134,6 +143,9 @@ pub fn pending_plan(
     slots: &[Slot],
     mv: &Move,
 ) -> Option<Plan> {
+    if slots.len() != ids.len() {
+        return None;
+    }
     let from = ids.iter().position(|i| i == &mv.id)?;
     let w = slots.get(from)?.w;
     let (start, end) = group_span(ids, group_of, from);
@@ -162,6 +174,10 @@ pub fn pending_plan(
 pub fn shifts_for(ids: &[String], slots: &[Slot], plan: Option<&Plan>) -> HashMap<String, f32> {
     let mut shifts = HashMap::new();
     let Some(plan) = plan else { return shifts };
+    // A plan made from a longer list than this one moves nothing.
+    if plan.from >= ids.len() || plan.to >= ids.len() || slots.len() != ids.len() {
+        return shifts;
+    }
     let gap = plan.width + SPACING;
     shifts.insert(ids[plan.from].clone(), plan.left - slots[plan.from].x);
     if plan.to > plan.from {
@@ -177,18 +193,23 @@ pub fn shifts_for(ids: &[String], slots: &[Slot], plan: Option<&Plan>) -> HashMa
     shifts
 }
 
+/// The id to pass as `beforeId` for a move from `from` to `to`; `None` puts
+/// the window at the end of its group. Both must be inside `ids`.
 pub fn before_id_for(
     ids: &[String],
     group_of: &HashMap<String, String>,
     from: usize,
     to: usize,
 ) -> Option<String> {
+    if from >= ids.len() {
+        return None;
+    }
     if to < from {
-        return Some(ids[to].clone());
+        return ids.get(to).cloned();
     }
     let (_, end) = group_span(ids, group_of, from);
     if to < end {
-        Some(ids[to + 1].clone())
+        ids.get(to + 1).cloned()
     } else {
         None
     }
@@ -198,13 +219,16 @@ pub fn move_satisfied(ids: &[String], group_of: &HashMap<String, String>, mv: &M
     let Some(i) = ids.iter().position(|x| x == &mv.id) else {
         return true;
     };
+    let group = group_of.get(&mv.id);
     match &mv.before_id {
-        None => i == ids.len() - 1 || group_of[&ids[i + 1]] != group_of[&mv.id],
+        None => ids
+            .get(i + 1)
+            .is_none_or(|next| group_of.get(next) != group),
         Some(before) => {
             let Some(b) = ids.iter().position(|x| x == before) else {
                 return true;
             };
-            if group_of[before] != group_of[&mv.id] {
+            if group_of.get(before) != group {
                 return true;
             }
             b == i + 1
@@ -538,6 +562,27 @@ pub fn dock_body(state: AppState, output: Output) -> Div {
                 };
                 let slots = slots_for(&shown, &local.widths, &model);
                 let total = slots.last().map_or(0.0, |s| s.x + s.w);
+                // A drag's plan holds indices into the list it was made
+                // from, and this render also runs when the window list
+                // changes with the pointer held still. Remake the plan for
+                // the list being drawn, as the QML's viewChanged() did
+                // through refreshShifts(), and keep it for the release.
+                let (view_lo, view_hi) = (local.scroll_x, local.scroll_x + local.flick_w);
+                if let Some(drag) = &mut local.drag {
+                    let cancelled =
+                        drag.pointer_y < -CANCEL_BAND || drag.pointer_y > STRIP_H + CANCEL_BAND;
+                    drag.plan = live_plan(
+                        &shown,
+                        &model.group_of,
+                        &slots,
+                        &drag.id,
+                        drag.pointer_x,
+                        drag.grab_offset,
+                        view_lo,
+                        view_hi,
+                        cancelled,
+                    );
+                }
                 let plan = match (&local.drag, &local.held) {
                     (Some(drag), _) => drag.plan,
                     (None, Some(held)) => {
@@ -759,9 +804,13 @@ pub fn dock_body(state: AppState, output: Output) -> Div {
                             local.suppress_click = true;
                             let cancelled = drag.pointer_y < -CANCEL_BAND
                                 || drag.pointer_y > STRIP_H + CANCEL_BAND;
+                            // Only a plan for the list on screen is carried
+                            // out: its `from` must be the dragged window.
                             if !cancelled
                                 && let Some(plan) = drag.plan
                                 && plan.to != plan.from
+                                && local.shown.get(plan.from) == Some(&drag.id)
+                                && plan.to < local.shown.len()
                             {
                                 let model = dock_model(&state, &monitor);
                                 let before = before_id_for(
@@ -1088,5 +1137,55 @@ mod tests {
         };
         let moved_end: Vec<String> = ["b", "c", "a", "d"].iter().map(|s| s.to_string()).collect();
         assert!(move_satisfied(&moved_end, &groups, &mv_end));
+    }
+
+    /// A window closing mid-drag shortens the list under a plan made from the
+    /// longer one. That used to index past the end and end the shell.
+    #[test]
+    fn stale_plan_does_not_panic() {
+        let (ids, groups, slots) = setup();
+        // Drag "c" (index 2) back to index 0, then lose "a" and "b".
+        let plan = live_plan(&ids, &groups, &slots, "c", 0.0, 10.0, 0.0, 1000.0, false).unwrap();
+        assert_eq!((plan.from, plan.to), (2, 0));
+        let short_ids = ids[2..].to_vec();
+        let short_slots = slots[..2].to_vec();
+        assert!(shifts_for(&short_ids, &short_slots, Some(&plan)).is_empty());
+        assert_eq!(before_id_for(&short_ids, &groups, plan.from, plan.to), None);
+        // Slots from the old list give no plan for the new one.
+        assert!(
+            live_plan(
+                &short_ids, &groups, &slots, "c", 0.0, 10.0, 0.0, 1000.0, false
+            )
+            .is_none()
+        );
+        // The plan remade for the short list is in range for it.
+        let remade = live_plan(
+            &short_ids,
+            &groups,
+            &short_slots,
+            "c",
+            0.0,
+            10.0,
+            0.0,
+            1000.0,
+            false,
+        )
+        .unwrap();
+        assert_eq!((remade.from, remade.to), (0, 0));
+        assert!(!shifts_for(&short_ids, &short_slots, Some(&remade)).is_empty());
+    }
+
+    /// Ids the group map has never heard of are tolerated, not indexed.
+    #[test]
+    fn unknown_ids_do_not_panic() {
+        let (ids, _, slots) = setup();
+        let empty = HashMap::new();
+        assert!(live_plan(&ids, &empty, &slots, "a", 500.0, 10.0, 0.0, 1000.0, false).is_some());
+        let mv = Move {
+            id: "a".into(),
+            before_id: Some("c".into()),
+        };
+        assert!(!move_satisfied(&ids, &empty, &mv));
+        assert!(pending_plan(&ids, &empty, &slots, &mv).is_some());
     }
 }

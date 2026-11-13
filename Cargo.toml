@@ -9,7 +9,10 @@ name = "minkashell"
 path = "src/main.rs"
 
 [dependencies]
-anti-webui = { git = "https://github.com/bea4dev/AntiWebUI", rev = "25e82a1d2a7a08658f0eede14cde47b34cce40a6", default-features = false, features = ["wayland", "wayland-shell", "shell-apps", "shell-audio", "shell-battery", "shell-notifications", "shell-process", "shell-session", "shell-system", "shell-tray"] }
+# "svg" is not optional here: the window-control buttons (assets/mac-glass-*.svg)
+# and nearly every icon of an SVG icon theme are decoded through it, and without
+# it they draw as nothing, with no message.
+anti-webui = { git = "https://github.com/bea4dev/AntiWebUI", rev = "25e82a1d2a7a08658f0eede14cde47b34cce40a6", default-features = false, features = ["svg", "wayland", "wayland-shell", "shell-apps", "shell-audio", "shell-battery", "shell-notifications", "shell-process", "shell-session", "shell-system", "shell-tray"] }
 calloop = { version = "0.14", default-features = false }
 minka-ipc = { package = "MinkaIPC", path = "../MinkaIPC" }
 serde_json = "1"
