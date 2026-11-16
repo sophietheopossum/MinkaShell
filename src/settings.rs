@@ -165,11 +165,12 @@ pub fn syu_state_path() -> Option<PathBuf> {
 }
 
 /// MinkaSyu UI directory for the updates-pill launch command.
-pub fn syu_ui_dir() -> String {
-    std::env::var("MINKA_SYU_DIR")
+/// The MinkaSyu core, which also opens its window (`minka-syu ui`).
+pub fn syu_bin() -> String {
+    std::env::var("MINKA_SYU_BIN")
         .ok()
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| "/usr/share/minka-syu/ui".to_owned())
+        .unwrap_or_else(|| "minka-syu".to_owned())
 }
 
 #[cfg(test)]

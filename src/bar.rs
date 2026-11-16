@@ -636,8 +636,10 @@ pub fn updates_pill(state: AppState) -> Div {
             .justify_center()
             .cursor(CursorIcon::Pointer)
             .on_click(move |_| {
-                let _ = std::process::Command::new("qs")
-                    .args(["-p", &settings::syu_ui_dir()])
+                // `minka-syu ui` picks the window: its AntiWebUI front end,
+                // or the QML one under MINKA_SYU_DIR when that is missing.
+                let _ = std::process::Command::new(settings::syu_bin())
+                    .arg("ui")
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())

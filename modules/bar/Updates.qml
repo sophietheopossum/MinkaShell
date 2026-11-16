@@ -36,9 +36,8 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        // MINKA_SYU_DIR points at the checkout's ui/ in dev; installed,
-        // the package puts it under /usr/share.
-        onClicked: Quickshell.execDetached(["qs", "-p",
-            Quickshell.env("MINKA_SYU_DIR") || "/usr/share/minka-syu/ui"])
+        // `minka-syu ui` picks the window: the AntiWebUI front end, or the
+        // QML one (MINKA_SYU_DIR in dev, /usr/share/minka-syu/ui installed).
+        onClicked: Quickshell.execDetached([Quickshell.env("MINKA_SYU_BIN") || "minka-syu", "ui"])
     }
 }
