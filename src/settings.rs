@@ -106,6 +106,13 @@ pub fn show_bar_on(settings: &Settings, all: &[Output], output: &Output) -> bool
     }
 }
 
+/// Whether a MinkaSyu update row is one a plain -Syu applies. Rows from
+/// cores before held/superseded rows existed have neither key.
+fn pending(u: &Value) -> bool {
+    u.get("held").and_then(Value::as_bool) != Some(true)
+        && u.get("superseded_by").and_then(Value::as_array).is_none_or(|a| a.is_empty())
+}
+
 /// MinkaSyu's state file, watched by `services/SyuState.qml`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SyuState {
@@ -120,10 +127,13 @@ impl SyuState {
             return Self::default();
         };
         Self {
+            // Pending rows only: MinkaSyu also lists updates pacman.conf
+            // holds back ("held") and packages a ticked replacement
+            // removes ("superseded_by"), which a plain -Syu does not apply.
             count: data
                 .get("updates")
                 .and_then(Value::as_array)
-                .map_or(0, |a| a.len() as u64),
+                .map_or(0, |a| a.iter().filter(|u| pending(u)).count() as u64),
             repo_changes: data
                 .get("repo_change_count")
                 .and_then(Value::as_u64)
@@ -185,5 +195,9 @@ mod tests {
         assert_eq!(s.repo_changes, 3);
         assert_eq!(s.checked_at, 9);
         assert_eq!(SyuState::parse("{}"), SyuState::default());
+        let held = SyuState::parse(
+            r#"{"updates":[{"name":"a"},{"name":"b","held":true},{"name":"c","superseded_by":["d"]},{"name":"d","superseded_by":[]}]}"#,
+        );
+        assert_eq!(held.count, 2);
     }
 }

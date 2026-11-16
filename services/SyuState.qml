@@ -39,7 +39,12 @@ Singleton {
         onLoaded: {
             try {
                 const data = JSON.parse(stateFile.text());
-                root.count = Array.isArray(data.updates) ? data.updates.length : 0;
+                // Pending rows only: MinkaSyu also lists updates pacman.conf
+                // holds back ("held") and packages a ticked replacement
+                // removes ("superseded_by"), which a plain -Syu does not apply.
+                root.count = Array.isArray(data.updates)
+                    ? data.updates.filter(u => u?.held !== true && (u?.superseded_by ?? []).length === 0).length
+                    : 0;
                 root.repoChanges = typeof data.repo_change_count === "number" ? data.repo_change_count : 0;
                 root.checkedAt = typeof data.checked_at === "number" ? data.checked_at : 0;
             } catch (e) {
