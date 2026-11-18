@@ -134,12 +134,27 @@ impl AppState {
             None | Some("toggle") => !was_open,
             Some(_) => false,
         };
-        self.open_menu
-            .set_if_changed(open.then_some((target, kind)));
+        self.set_open_menu(open.then_some((target, kind)));
     }
 
     pub fn close_all_menus(&self) {
-        self.open_menu.set_if_changed(None);
+        self.set_open_menu(None);
+    }
+
+    fn start_menu_open(&self) -> bool {
+        self.open_menu
+            .with_untracked(|open| matches!(open, Some((_, MenuKind::Start))))
+    }
+
+    fn set_open_menu(&self, next: Option<(String, MenuKind)>) {
+        let was_start = self.start_menu_open();
+        self.open_menu.set_if_changed(next);
+        // While the start menu was open the view kept its last focused
+        // window (see `IpcNews::View` below). The compositor says who has
+        // the keyboard now only if that changes, so ask.
+        if was_start && !self.start_menu_open() {
+            self.ipc.refresh();
+        }
     }
 
     pub fn last_reorder(&self) -> Option<ReorderOutcome> {
@@ -186,7 +201,12 @@ impl AppState {
                     self.ipc_connected.set_if_changed(false);
                     self.ipc_ready.set_if_changed(false);
                 }
-                IpcNews::View(view) => {
+                IpcNews::View(mut view) => {
+                    // The start menu takes the keyboard, so no window has
+                    // it while it is open: the one that had it stays marked.
+                    if self.start_menu_open() {
+                        view.keep_focus_of(&self.view.get_untracked());
+                    }
                     self.view.set_if_changed(view);
                     self.ipc_ready.set_if_changed(true);
                     self.windows_known.set_if_changed(true);

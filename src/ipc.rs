@@ -133,6 +133,39 @@ impl WorkspaceView {
             .or_else(|| self.monitors.first())
     }
 
+    /// The id of the window that has the keyboard, on any monitor.
+    fn focused_id(&self) -> Option<&str> {
+        self.monitors
+            .iter()
+            .flat_map(|m| m.workspaces.iter())
+            .flat_map(|w| w.windows.iter())
+            .find(|w| w.focused)
+            .map(|w| w.id.as_str())
+    }
+
+    /// When no window here has the keyboard, the one that had it in `before`
+    /// is marked as having it, if it is still there. For while the shell's
+    /// own start menu holds the keyboard: the compositor then reports no
+    /// focused window, and the title in the bar and the dock's highlight
+    /// would go for as long as the menu is open.
+    pub fn keep_focus_of(&mut self, before: &WorkspaceView) {
+        if self.focused_id().is_some() {
+            return;
+        }
+        let Some(id) = before.focused_id() else {
+            return;
+        };
+        if let Some(window) = self
+            .monitors
+            .iter_mut()
+            .flat_map(|m| m.workspaces.iter_mut())
+            .flat_map(|w| w.windows.iter_mut())
+            .find(|w| w.id == id)
+        {
+            window.focused = true;
+        }
+    }
+
     pub fn focused_window(&self, duo: bool, monitor_name: &str) -> Option<Win> {
         let scan = |m: &Monitor| {
             m.workspaces
@@ -352,5 +385,67 @@ impl IpcController {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One monitor with one workspace holding `windows`: (id, focused).
+    fn view(windows: &[(&str, bool)]) -> WorkspaceView {
+        WorkspaceView {
+            current_monitor: "eDP-1".into(),
+            monitors: vec![Monitor {
+                name: "eDP-1".into(),
+                workspaces: vec![Workspace {
+                    index: 1,
+                    active: true,
+                    is_tiled: false,
+                    window_count: windows.len() as i64,
+                    windows: windows
+                        .iter()
+                        .map(|(id, focused)| Win {
+                            id: (*id).into(),
+                            focused: *focused,
+                            ..Win::default()
+                        })
+                        .collect(),
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn the_window_that_had_the_keyboard_keeps_its_mark() {
+        let before = view(&[("a", false), ("b", true)]);
+        let mut now = view(&[("a", false), ("b", false)]);
+        now.keep_focus_of(&before);
+        assert_eq!(now.focused_id(), Some("b"));
+        assert_eq!(now, before);
+    }
+
+    #[test]
+    fn a_window_that_has_the_keyboard_is_left_alone() {
+        let before = view(&[("a", false), ("b", true)]);
+        let mut now = view(&[("a", true), ("b", false)]);
+        now.keep_focus_of(&before);
+        assert_eq!(now.focused_id(), Some("a"));
+    }
+
+    #[test]
+    fn a_window_that_is_gone_is_not_brought_back() {
+        let before = view(&[("a", false), ("b", true)]);
+        let mut now = view(&[("a", false)]);
+        now.keep_focus_of(&before);
+        assert_eq!(now.focused_id(), None);
+    }
+
+    #[test]
+    fn with_no_window_focused_before_none_is_after() {
+        let before = view(&[("a", false)]);
+        let mut now = view(&[("a", false)]);
+        now.keep_focus_of(&before);
+        assert_eq!(now.focused_id(), None);
     }
 }

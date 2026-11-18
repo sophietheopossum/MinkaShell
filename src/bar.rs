@@ -139,7 +139,11 @@ fn workspace_pill(state: AppState, monitor: String, index: i64) -> Div {
     })
 }
 
-pub fn workspaces(state: AppState, monitor: String) -> Div {
+/// The workspaces of a monitor as pills, when it has more than one and
+/// desktops are not switched off in the settings. With one there is nothing
+/// to choose between, and then this is no view at all (not an empty box,
+/// which would still take a gap in the row or column around it).
+pub fn workspaces(state: AppState, monitor: String, wrap: bool) -> impl IntoView {
     // The pills are keyed by workspace, so only a workspace that comes or
     // goes builds or drops one.
     let shown = {
@@ -148,73 +152,27 @@ pub fn workspaces(state: AppState, monitor: String) -> Div {
             let enabled = state.settings.with(|s| s.workspaces_enabled);
             state.view.with(|v| {
                 v.monitor_view(&monitor)
-                    .filter(|m| enabled || m.workspaces.len() > 1)
+                    .filter(|m| enabled && m.workspaces.len() > 1)
                     .map(|m| m.workspaces.iter().map(|w| w.index).collect::<Vec<_>>())
                     .unwrap_or_default()
             })
         })
     };
-    // (the monitor is known, its active workspace is tiled)
-    let tiling = {
-        let (state, monitor) = (state.clone(), monitor.clone());
-        memo(move || {
-            state.view.with(|v| {
-                v.monitor_view(&monitor)
-                    .map(|m| m.active_workspace().is_some_and(|w| w.is_tiled))
-            })
-        })
-    };
-    // None: the monitor is not known. Some(true): there are no pills, and
-    // the tiling icon is the toggle.
-    let as_button = memo(move || tiling.get().map(|_| shown.with(|pills| pills.is_empty())));
-    let (pill_state, pill_monitor) = (state.clone(), monitor.clone());
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(4.0_f32)
-        .child(for_each(
-            move || shown.get(),
-            |index| *index,
-            move |index| workspace_pill(pill_state.clone(), pill_monitor.clone(), index),
-        ))
-        .child(dyn_view(move || {
-            // Only which kind of thing stands here is read: the glyph below
-            // follows the tiling itself, so a click's ripple is not cut off
-            // by the answer to it.
-            let Some(as_button) = as_button.get() else {
-                return div();
-            };
-            if !as_button {
-                return tiling_glyph(tiling);
-            }
-            // With desktops off the icon itself is the tiling toggle.
-            let (state, monitor) = (state.clone(), monitor.clone());
-            let ink = Ink::new(|c| c.on_surface, || false);
-            let button = div()
-                .size(28.0)
-                .rounded(14.0_f32)
-                .flex()
-                .flex_none()
-                .items_center()
-                .justify_center()
-                .cursor(CursorIcon::Pointer)
-                .on_click(move |_| state.ipc.toggle_tiling(&monitor))
-                .child(tiling_glyph(tiling));
-            ink.paint(ink.listen(button))
-        }))
-}
-
-/// The active workspace's layout as an icon: tiled or floating.
-fn tiling_glyph(tiling: Memo<Option<bool>>) -> Div {
-    div().flex().flex_none().child(dyn_view(move || {
-        let symbol = if tiling.get() == Some(true) {
-            icons::SPLITSCREEN_LEFT
-        } else {
-            icons::SELECT_WINDOW
-        };
-        sized_icon(symbol, 16.0).text_color(color(PURPLE))
-    }))
+    show(
+        move || shown.with(|pills| !pills.is_empty()),
+        move || {
+            let (pill_state, pill_monitor) = (state.clone(), monitor.clone());
+            let row = div().flex().flex_row().items_center().gap(4.0_f32);
+            // In the side column more pills than fit go onto a second line;
+            // the top bar has one line.
+            let row = if wrap { row.flex_wrap() } else { row };
+            row.child(for_each(
+                move || shown.get(),
+                |index| *index,
+                move |index| workspace_pill(pill_state.clone(), pill_monitor.clone(), index),
+            ))
+        },
+    )
 }
 
 pub fn focused_title(state: AppState, monitor: String) -> Div {
@@ -676,7 +634,7 @@ pub fn bar_body(state: AppState, output: Output) -> Div {
                 .gap(12.0_f32)
                 .overflow_hidden()
                 .child(start_button(state.clone(), monitor.clone()))
-                .child(workspaces(state.clone(), monitor.clone()))
+                .child(workspaces(state.clone(), monitor.clone(), false))
                 .child(focused_title(state.clone(), monitor.clone()))
                 .child(window_controls(state.clone(), monitor.clone())),
         )

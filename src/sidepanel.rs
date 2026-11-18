@@ -45,7 +45,7 @@ pub fn side_body(state: AppState, output: Output) -> Div {
                         .flex_row()
                         .child(bar::clock_pill(state.clone(), monitor.clone())),
                 )
-                .child(bar::workspaces(state.clone(), monitor.clone()).flex_wrap())
+                .child(bar::workspaces(state.clone(), monitor.clone(), true))
                 .child(bar::sys_usage(state.clone()))
                 .child(bar::updates_pill(state.clone())),
         )
