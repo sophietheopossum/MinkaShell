@@ -26,7 +26,11 @@ pub const BAR_BG_ALPHA: f32 = 0.92;
 pub const BAR_HEIGHT: f32 = 32.0;
 pub const DOCK_HEIGHT: f32 = 44.0;
 
-pub const FONT_FAMILY: &str = "Noto Sans";
+/// MinkaDE's UI font, then what it was before. The toolkit skips a family
+/// that is not installed without saying so, and Roboto Flex is in no
+/// official Arch repo (AUR: ttf-roboto-flex), so Noto Sans stays in the list.
+/// Proustite.qml names Roboto Flex alone, since QML takes one family.
+pub const FONT_FAMILY: &str = "Roboto Flex, Noto Sans";
 pub const MONO_FAMILY: &str = "monospace";
 pub const FONT_SIZE: f32 = 13.0;
 

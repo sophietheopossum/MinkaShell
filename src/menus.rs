@@ -412,6 +412,7 @@ pub fn start_body(state: AppState, output: Output) -> Div {
     let submit_state = state.clone();
     let escape_state = state.clone();
     let search = text_field(query)
+        .font_family(FONT_FAMILY)
         .placeholder("search…")
         .node_ref(input_ref)
         .on_submit(move |text| {

@@ -542,8 +542,11 @@ fn tray_item_view(output: Output, item: anti_webui::shell::TrayItem) -> Div {
     let click_item = item.clone();
     let ox = output.position.x;
     let oy = output.position.y;
+    // The family is set here for the tray menu below, which is the toolkit's
+    // own widget and would otherwise use the toolkit's default font.
     let icon: Div = div()
         .relative()
+        .font_family(FONT_FAMILY)
         .w(18.0)
         .h(18.0)
         .cursor(CursorIcon::Pointer)
