@@ -245,7 +245,12 @@ pub fn window_controls(state: AppState, monitor: String) -> Div {
             "mac-glass-minimize.svg",
             "mac-glass-minus.svg",
             move || {
-                if min_win.minimized {
+                // With the start menu open the compositor gives no window
+                // the keyboard, and a window minimised then would keep it
+                // once the menu closes. So this click only closes the menu.
+                if min_state.start_menu_open() {
+                    min_state.close_all_menus();
+                } else if min_win.minimized {
                     min_state.ipc.activate_window(&min_win.id);
                 } else {
                     min_state.ipc.minimize_window(&min_win.id);

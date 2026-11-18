@@ -143,6 +143,11 @@ impl WorkspaceView {
             .map(|w| w.id.as_str())
     }
 
+    /// Whether some window here has the keyboard.
+    pub fn has_focused_window(&self) -> bool {
+        self.focused_id().is_some()
+    }
+
     /// When no window here has the keyboard, the one that had it in `before`
     /// is marked as having it, if it is still there. For while the shell's
     /// own start menu holds the keyboard: the compositor then reports no

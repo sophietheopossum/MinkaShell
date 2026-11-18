@@ -11,7 +11,7 @@ use anti_webui::prelude::*;
 use anti_webui::shell::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 /// AntiWebUI disposes signal owners before running cleanups, so writes from
 /// cleanup hooks can hit dead nodes. Swallow that specific panic there.
@@ -68,6 +68,9 @@ pub struct AppState {
     prev_cpu: Rc<Cell<Option<(u64, u64)>>>,
     /// The tray items written down for the next shell (see `tray_rescue`).
     tray_saved: Rc<RefCell<tray_rescue::Saved>>,
+    /// Until when, after the start menu closed, the last focused window
+    /// stays marked (see `IpcNews::View`).
+    focus_hold_until: Rc<Cell<Option<Instant>>>,
     _guard: Rc<InstanceGuard>,
 }
 
@@ -92,6 +95,7 @@ impl AppState {
             syu_mtime: Rc::new(Cell::new(None)),
             prev_cpu: Rc::new(Cell::new(None)),
             tray_saved: Rc::new(RefCell::new(Vec::new())),
+            focus_hold_until: Rc::new(Cell::new(None)),
             _guard: Rc::new(guard),
         }
     }
@@ -141,7 +145,7 @@ impl AppState {
         self.set_open_menu(None);
     }
 
-    fn start_menu_open(&self) -> bool {
+    pub fn start_menu_open(&self) -> bool {
         self.open_menu
             .with_untracked(|open| matches!(open, Some((_, MenuKind::Start))))
     }
@@ -149,12 +153,26 @@ impl AppState {
     fn set_open_menu(&self, next: Option<(String, MenuKind)>) {
         let was_start = self.start_menu_open();
         self.open_menu.set_if_changed(next);
-        // While the start menu was open the view kept its last focused
-        // window (see `IpcNews::View` below). The compositor says who has
-        // the keyboard now only if that changes, so ask.
         if was_start && !self.start_menu_open() {
-            self.ipc.refresh();
+            // While the start menu was open the view kept its last focused
+            // window (see `IpcNews::View` below). An answer the compositor
+            // gave before the keyboard is back can still arrive, so the mark
+            // is held a moment longer: until a view says who has the keyboard,
+            // or a second has gone. Then ask, in case no window got it back.
+            self.focus_hold_until
+                .set(Some(Instant::now() + Duration::from_secs(1)));
+            let ipc = Rc::clone(&self.ipc);
+            set_timeout(Duration::from_millis(1100), move || ipc.refresh());
         }
+    }
+
+    /// Whether a view with no focused window should keep the last one marked.
+    fn holding_focus(&self) -> bool {
+        self.start_menu_open()
+            || self
+                .focus_hold_until
+                .get()
+                .is_some_and(|until| Instant::now() < until)
     }
 
     pub fn last_reorder(&self) -> Option<ReorderOutcome> {
@@ -204,7 +222,9 @@ impl AppState {
                 IpcNews::View(mut view) => {
                     // The start menu takes the keyboard, so no window has
                     // it while it is open: the one that had it stays marked.
-                    if self.start_menu_open() {
+                    if view.has_focused_window() {
+                        self.focus_hold_until.set(None);
+                    } else if self.holding_focus() {
                         view.keep_focus_of(&self.view.get_untracked());
                     }
                     self.view.set_if_changed(view);
