@@ -29,6 +29,7 @@ fn emphasized(ms: u64) -> Transition {
 pub fn menu_card(width: f32, content: Div) -> Div {
     let card = div()
         .w(width)
+        .transform_origin(0.5, 0.0)
         .rounded(10.0_f32)
         .bg(bar_bg())
         .border(1.0_f32)
@@ -37,10 +38,12 @@ pub fn menu_card(width: f32, content: Div) -> Div {
         .child(content);
     // Built once: the condition never changes, so the view is asked for once.
     let card = Cell::new(Some(card));
+    // It grows from its top edge, the side it hangs from, so nothing of it is
+    // outside its surface while it comes in.
     div().child(
         show(|| true, move || card.take().unwrap_or_else(div))
             .appear()
-            .enter(|s| s.opacity(0.0_f32).scale(0.94_f32).translate_y(-6.0_f32))
+            .enter(|s| s.opacity(0.0_f32).scale(0.94_f32))
             .transition(emphasized(220)),
     )
 }
@@ -144,24 +147,17 @@ fn month_grid(y: i32, m: u32) -> Div {
                 .justify_center();
             let cell = if is_today {
                 // Today on a Material shape, dark on red.
+                // The shape paints under its children.
                 cell.child(
-                    div()
-                        .relative()
-                        .size(26.0)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            styled_shape(
-                                || MaterialShape::Cookie9Sided,
-                                ShapeStyle::new().color(|c| c.primary),
-                            )
-                            .absolute()
-                            .left(0.0)
-                            .top(0.0)
-                            .size(26.0),
-                        )
-                        .child(cell_text.font_weight(FontWeight(600))),
+                    styled_shape(
+                        || MaterialShape::Cookie9Sided,
+                        ShapeStyle::new().color(|c| c.primary),
+                    )
+                    .size(26.0)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(cell_text.font_weight(FontWeight(600))),
                 )
             } else {
                 cell.child(cell_text)
@@ -314,7 +310,7 @@ pub fn battery_body() -> Div {
     // The bar is built again only when charging starts or stops: then it
     // turns wavy, or straight. Its value and colors follow by themselves.
     let charging = memo(|| battery().charging());
-    let bar = div().w_full().child(dyn_view(move || {
+    let bar = div().w_full().h(10.0).flex().items_center().child(dyn_view(move || {
         let fill = || (battery().percentage() / 100.0) as f32;
         if charging.get() {
             wavy_progress_colored(fill, Transition::ms(500).linear(), battery_colors).w_full()
@@ -364,8 +360,11 @@ pub fn battery_body() -> Div {
 // ---------------------------------------------------------------------------
 // Start menu: fullscreen search + app grid + session row
 
-/// One of the session buttons: outlined, with its icon.
+/// One of the session buttons: outlined, with its icon. The menu closes
+/// first: a button that kept the focus in an open menu would act again on
+/// Enter or Space after a resume.
 fn session_button(
+    state: AppState,
     label: &'static str,
     symbol: &'static Symbol,
     on_click: impl Fn() + 'static,
@@ -376,6 +375,7 @@ fn session_button(
     )
     .on_click(move |e: &PointerEvent| {
         e.stop_propagation();
+        state.close_all_menus();
         on_click();
     })
 }
@@ -482,6 +482,9 @@ pub fn start_body(state: AppState, output: Output) -> Div {
                     .flex()
                     .flex_row()
                     .flex_wrap()
+                    .justify_center()
+                    // A click between the cards is not a click outside the menu.
+                    .on_click(|e: &PointerEvent| e.stop_propagation())
                     .child(
                         for_each(found, |app| app.id.clone(), move |app| {
                             app_cell(grid_state.clone(), app, first_hit)
@@ -495,7 +498,7 @@ pub fn start_body(state: AppState, output: Output) -> Div {
         );
 
     let session_row = div().flex().flex_row().justify_center().pb(20.0_f32).child(button_group([
-        session_button("logout", icons::LOGOUT, || {
+        session_button(state.clone(), "logout", icons::LOGOUT, || {
             let _ = std::process::Command::new("sh")
                 .args(["-c", "loginctl terminate-session \"$XDG_SESSION_ID\""])
                 .stdin(std::process::Stdio::null())
@@ -503,13 +506,13 @@ pub fn start_body(state: AppState, output: Output) -> Div {
                 .stderr(std::process::Stdio::null())
                 .spawn();
         }),
-        session_button("sleep", icons::BEDTIME, || {
+        session_button(state.clone(), "sleep", icons::BEDTIME, || {
             let _ = session().suspend();
         }),
-        session_button("reboot", icons::RESTART_ALT, || {
+        session_button(state.clone(), "reboot", icons::RESTART_ALT, || {
             let _ = session().reboot();
         }),
-        session_button("off", icons::POWER_SETTINGS_NEW, || {
+        session_button(state.clone(), "off", icons::POWER_SETTINGS_NEW, || {
             let _ = session().power_off();
         }),
     ]));
