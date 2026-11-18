@@ -484,6 +484,8 @@ pub fn start_body(state: AppState, output: Output) -> Div {
         .w_full()
         .h_full()
         .bg(color_alpha(GROUND, 0.88))
+        .selection_color(selection_bg())
+        .scrollbar_color(scrollbar_fg())
         .on_click(move |_| close_state.close_all_menus())
         .flex()
         .flex_col()

@@ -7,12 +7,9 @@ use crate::state::AppState;
 use crate::theme::*;
 use anti_webui::prelude::*;
 use anti_webui::shell::prelude::*;
+use anti_webui_md3e::components::divider;
 
 pub const SIDE_WIDTH: i32 = 400;
-
-fn divider() -> Div {
-    div().h(1.0).w_full().bg(color(LINE))
-}
 
 pub fn side_body(state: AppState, output: Output) -> Div {
     let monitor = output.name.clone();
@@ -48,7 +45,7 @@ pub fn side_body(state: AppState, output: Output) -> Div {
                         .flex_row()
                         .child(bar::clock_pill(state.clone(), monitor.clone())),
                 )
-                .child(bar::workspaces(state.clone(), monitor.clone()))
+                .child(bar::workspaces(state.clone(), monitor.clone()).flex_wrap())
                 .child(bar::sys_usage(state.clone()))
                 .child(bar::updates_pill(state.clone())),
         )

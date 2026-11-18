@@ -834,7 +834,13 @@ pub fn status_body(_state: AppState, monitor: &str) -> Div {
             }
             drop(local);
 
-            col.child(div().max_h(apps_max).overflow_y_scroll().child(apps))
+            col.child(
+                div()
+                    .max_h(apps_max)
+                    .overflow_y_scroll()
+                    .scrollbar_color(scrollbar_fg())
+                    .child(apps),
+            )
         })),
     );
     crate::bar::track_hover(card, hovered)

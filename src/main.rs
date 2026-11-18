@@ -156,6 +156,7 @@ fn install_dock_and_side_panel(state: AppState) {
 }
 
 fn shell_root(guard: instance::InstanceGuard) {
+    theme::install();
     let state = AppState::new(guard);
     state.start_services();
     install_output_surfaces(state.clone());

@@ -1,4 +1,5 @@
-//! Proustite theme tokens and small text helpers.
+//! Proustite theme tokens, the Material 3 Expressive color scheme made from
+//! them, and small text helpers.
 //!
 //! The values mirror the shared `Proustite` QML singleton and MinkaShell's
 //! `services/Theme.qml` facade. They are duplicated here as constants because
@@ -6,6 +7,7 @@
 //! with `../../Proustite/Proustite.qml`.
 
 use anti_webui::prelude::*;
+use anti_webui_md3e::{ColorScheme, Density, set_color_scheme, set_density};
 
 pub const GROUND: u32 = 0x0a0709;
 pub const SURFACE: u32 = 0x161013;
@@ -18,6 +20,7 @@ pub const RED: u32 = 0xff0000;
 pub const RED_DIM: u32 = 0x8f1e2d;
 pub const PURPLE: u32 = 0xa488c9;
 pub const PURPLE_DIM: u32 = 0x4c3a63;
+pub const GAUGE_DIM: u32 = 0x3a1219;
 pub const WARN_AMBER: u32 = 0xe0a026;
 
 /// `ground` at 0.92 alpha: bar and menu card background.
@@ -44,6 +47,88 @@ pub fn color_alpha(hex: u32, alpha: f32) -> Color {
 
 pub fn bar_bg() -> Color {
     color_alpha(BAR_BG, BAR_BG_ALPHA)
+}
+
+/// What text selected in a field is marked with.
+pub fn selection_bg() -> Color {
+    color_alpha(RED_DIM, 0.5)
+}
+
+/// The thumb of a scroller.
+pub fn scrollbar_fg() -> Color {
+    color_alpha(TEXT_FAINT, 0.6)
+}
+
+/// Proustite's tokens in Material's color roles: what the md3e components
+/// draw with. The roles Proustite has no token for (the error ones and the
+/// scrim) are the ones Material grows from Proustite's red.
+pub fn scheme() -> ColorScheme {
+    ColorScheme {
+        primary: color(RED),
+        on_primary: color(GROUND),
+        primary_container: color(RED_DIM),
+        on_primary_container: color(TEXT),
+        secondary: color(PURPLE),
+        on_secondary: color(GROUND),
+        secondary_container: color(PURPLE_DIM),
+        on_secondary_container: color(TEXT),
+        tertiary: color(WARN_AMBER),
+        on_tertiary: color(GROUND),
+        tertiary_container: color(GAUGE_DIM),
+        on_tertiary_container: color(TEXT),
+        surface: color(GROUND),
+        surface_dim: color(GROUND),
+        surface_bright: color(LINE),
+        surface_variant: color(SURFACE_RAISED),
+        on_surface: color(TEXT),
+        on_surface_variant: color(TEXT_MUTED),
+        inverse_surface: color(TEXT),
+        inverse_on_surface: color(GROUND),
+        inverse_primary: color(RED_DIM),
+        surface_container_lowest: color(GROUND),
+        surface_container_low: color(SURFACE),
+        surface_container: color(SURFACE),
+        surface_container_high: color(SURFACE_RAISED),
+        surface_container_highest: color(LINE),
+        outline: color(TEXT_FAINT),
+        outline_variant: color(LINE),
+        ..ColorScheme::from_seed(color(RED), true)
+    }
+}
+
+/// How everything the shell builds from here on draws: the md3e components
+/// in their compact sizes and the Proustite scheme, and the toolkit's own
+/// widgets (the start menu's search field, tray menus), which default to a
+/// light theme, in Proustite's colors. Call before the first view.
+pub fn install() {
+    set_density(Density::Compact);
+    set_color_scheme(scheme());
+    set_theme(Theme {
+        surface: color(SURFACE),
+        surface_muted: color(SURFACE),
+        overlay: color(SURFACE_RAISED),
+        hover: color(SURFACE_RAISED),
+        pressed: color(LINE),
+        selected: color(PURPLE_DIM),
+        text: color(TEXT),
+        text_muted: color(TEXT_MUTED),
+        text_disabled: color(TEXT_FAINT),
+        on_accent: color(TEXT),
+        border: color(LINE),
+        border_strong: color(TEXT_FAINT),
+        accent: color(PURPLE_DIM),
+        accent_hover: color(PURPLE),
+        accent_pressed: color(PURPLE_DIM),
+        accent_text: color(PURPLE),
+        accent_muted: color(GAUGE_DIM),
+        warning: color(WARN_AMBER),
+        danger: color(RED),
+        tooltip: color(SURFACE_RAISED),
+        on_tooltip: color(TEXT),
+        focus_ring: color_alpha(PURPLE, 0.7),
+        field_focus_ring: color_alpha(PURPLE, 0.35),
+        ..Theme::dark()
+    });
 }
 
 pub fn ui_text(source: impl IntoTextSource, size: f32, hex: u32) -> Text {

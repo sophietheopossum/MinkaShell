@@ -2,12 +2,16 @@
 //! The same widgets are reused by the Duo side panel.
 
 use crate::ipc::Win;
-use crate::settings::{self, Settings};
+use crate::settings;
 use crate::state::{AppState, MenuKind, cleanup_write};
 use crate::theme::*;
-use anti_webui::prelude::svg::kurbo::{BezPath, Point};
 use anti_webui::prelude::*;
 use anti_webui::shell::prelude::*;
+use anti_webui_md3e::components::{
+    ButtonSize, ButtonStyle, IconButtonStyle, Ink, icon_toggle_button, sized_icon, styled_button,
+    styled_toggle_button,
+};
+use anti_webui_md3e::icons;
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -75,143 +79,141 @@ fn focused_now(state: &AppState, monitor: &str) -> Option<Win> {
     state.view.with(|v| v.focused_window(duo, monitor))
 }
 
+/// The start button: an md3e icon button that is on (red, and squarer)
+/// while the start menu is open.
 pub fn start_button(state: AppState, monitor: String) -> Div {
-    let hovered = signal(false);
     let click_state = state.clone();
     let monitor_click = monitor.clone();
-    let button = div()
-        .w(24.0)
-        .h(22.0)
-        .rounded(5.0_f32)
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor(CursorIcon::Pointer)
-        .dyn_style(move |s| {
-            if state.is_open(MenuKind::Start, &monitor) {
-                s.bg(color(RED_DIM))
-            } else if hovered.get() {
-                s.bg(color(SURFACE_RAISED))
-            } else {
-                s.bg(Color::TRANSPARENT)
-            }
-        })
-        .on_click(move |_| click_state.toggle_menu(MenuKind::Start, Some(&monitor_click), None))
-        .child(
-            ui_text("❖", FONT_SIZE + 1.0, TEXT_MUTED).dyn_style(move |s| {
-                s.text_color(if hovered.get() {
-                    color(RED)
-                } else {
-                    color(TEXT_MUTED)
-                })
-            }),
-        );
-    track_hover(button, hovered)
+    icon_toggle_button(
+        icons::APPS,
+        Binding::new(
+            move || state.is_open(MenuKind::Start, &monitor),
+            move |_| click_state.toggle_menu(MenuKind::Start, Some(&monitor_click), None),
+        ),
+        IconButtonStyle::filled().size(ButtonSize::ExtraSmall),
+    )
 }
 
-fn workspace_pill(
-    state: AppState,
-    monitor: String,
-    index: i64,
-    active: bool,
-    occupied: bool,
-) -> Div {
-    let hovered = signal(false);
-    let click_state = state.clone();
-    let monitor_click = monitor.clone();
-    let pill = div()
-        .h(20.0)
-        .min_w(22.0)
-        .px(6.0_f32)
-        .rounded(4.0_f32)
-        .border(1.0_f32)
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor(CursorIcon::Pointer)
-        .dyn_style(move |s| {
-            if active {
-                s.bg(color(RED)).border_color(color(RED))
-            } else if hovered.get() {
-                s.bg(color(SURFACE_RAISED)).border_color(color(if occupied {
-                    TEXT_FAINT
-                } else {
-                    LINE
-                }))
-            } else {
-                s.bg(Color::TRANSPARENT).border_color(color(if occupied {
-                    TEXT_FAINT
-                } else {
-                    LINE
-                }))
-            }
-        })
-        // As in the DOM, `on_click` is the primary button only: the middle and
-        // right buttons arrive as aux clicks.
-        .on_click({
-            let state = click_state.clone();
-            let monitor = monitor_click.clone();
-            move |_| state.ipc.activate_workspace(&monitor, index)
-        })
-        .on_aux_click(move |e: &PointerEvent| {
-            if e.button == Some(PointerButton::Middle) {
-                click_state.ipc.toggle_tiling(&monitor_click);
-            }
-        })
-        .child(ui_text(
-            index.to_string(),
-            FONT_SIZE - 1.0,
-            if active {
-                GROUND
-            } else if occupied {
-                TEXT
-            } else {
-                TEXT_FAINT
-            },
-        ));
-    track_hover(pill, hovered)
+/// What a monitor's workspace `index` is like now: (active, has windows).
+fn workspace_now(state: &AppState, monitor: &str, index: i64) -> (bool, bool) {
+    state.view.with(|v| {
+        v.monitor_view(monitor)
+            .and_then(|m| m.workspaces.iter().find(|w| w.index == index))
+            .map_or((false, false), |w| (w.active, w.window_count > 0))
+    })
+}
+
+/// One workspace: an md3e toggle button that is on (red, and squarer) while
+/// its workspace is the active one. Off, it is outlined, brighter when the
+/// workspace has windows. It reads what it shows itself, so it is not built
+/// again when that changes and its change of shape can play.
+fn workspace_pill(state: AppState, monitor: String, index: i64) -> Div {
+    let (is_active, activate) = (state.clone(), state.clone());
+    let (active_monitor, click_monitor) = (monitor.clone(), monitor.clone());
+    let (dim_state, dim_monitor) = (state.clone(), monitor.clone());
+    styled_toggle_button(
+        index.to_string(),
+        Binding::new(
+            move || workspace_now(&is_active, &active_monitor, index).0,
+            move |_| activate.ipc.activate_workspace(&click_monitor, index),
+        ),
+        ButtonStyle::filled().size(ButtonSize::ExtraSmall),
+    )
+    .dyn_style(move |s| {
+        let (active, occupied) = workspace_now(&dim_state, &dim_monitor, index);
+        // Always 1 px, so the pill is as wide on as off.
+        let s = s.border(1.0_f32);
+        if active {
+            s.border_color(color(RED))
+        } else {
+            s.border_color(color(if occupied { TEXT_FAINT } else { LINE }))
+                .text_color(color(if occupied { TEXT } else { TEXT_FAINT }))
+        }
+    })
+    // As in the DOM, `on_click` is the primary button only: the middle and
+    // right buttons arrive as aux clicks.
+    .on_aux_click(move |e: &PointerEvent| {
+        if e.button == Some(PointerButton::Middle) {
+            state.ipc.toggle_tiling(&monitor);
+        }
+    })
 }
 
 pub fn workspaces(state: AppState, monitor: String) -> Div {
-    let view_state = state.clone();
-    let monitor_view = monitor.clone();
-    div().child(dyn_view(move || {
-        let settings_now: Settings = view_state.settings.get();
-        let row = div().flex().flex_row().items_center().gap(4.0_f32);
-        let monitor_data = view_state
-            .view
-            .with(|v| v.monitor_view(&monitor_view).cloned());
-        let Some(monitor_data) = monitor_data else {
-            return row;
-        };
-        let show_pills = settings_now.workspaces_enabled || monitor_data.workspaces.len() > 1;
-        let mut row = row;
-        if show_pills {
-            for ws in &monitor_data.workspaces {
-                row = row.child(workspace_pill(
-                    view_state.clone(),
-                    monitor_view.clone(),
-                    ws.index,
-                    ws.active,
-                    ws.window_count > 0,
-                ));
+    // The pills are keyed by workspace, so only a workspace that comes or
+    // goes builds or drops one.
+    let shown = {
+        let (state, monitor) = (state.clone(), monitor.clone());
+        memo(move || {
+            let enabled = state.settings.with(|s| s.workspaces_enabled);
+            state.view.with(|v| {
+                v.monitor_view(&monitor)
+                    .filter(|m| enabled || m.workspaces.len() > 1)
+                    .map(|m| m.workspaces.iter().map(|w| w.index).collect::<Vec<_>>())
+                    .unwrap_or_default()
+            })
+        })
+    };
+    // (the monitor is known, its active workspace is tiled)
+    let tiling = {
+        let (state, monitor) = (state.clone(), monitor.clone());
+        memo(move || {
+            state.view.with(|v| {
+                v.monitor_view(&monitor)
+                    .map(|m| m.active_workspace().is_some_and(|w| w.is_tiled))
+            })
+        })
+    };
+    // None: the monitor is not known. Some(true): there are no pills, and
+    // the tiling icon is the toggle.
+    let as_button = memo(move || tiling.get().map(|_| shown.with(|pills| pills.is_empty())));
+    let (pill_state, pill_monitor) = (state.clone(), monitor.clone());
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(4.0_f32)
+        .child(for_each(
+            move || shown.get(),
+            |index| *index,
+            move |index| workspace_pill(pill_state.clone(), pill_monitor.clone(), index),
+        ))
+        .child(dyn_view(move || {
+            // Only which kind of thing stands here is read: the glyph below
+            // follows the tiling itself, so a click's ripple is not cut off
+            // by the answer to it.
+            let Some(as_button) = as_button.get() else {
+                return div();
+            };
+            if !as_button {
+                return tiling_glyph(tiling);
             }
-        }
-        let tiled = monitor_data.active_workspace().is_some_and(|w| w.is_tiled);
-        let glyph = ui_text(if tiled { "◫" } else { "◰" }, FONT_SIZE, PURPLE);
-        if show_pills {
-            row.child(glyph)
+            // With desktops off the icon itself is the tiling toggle.
+            let (state, monitor) = (state.clone(), monitor.clone());
+            let ink = Ink::new(|c| c.on_surface, || false);
+            let button = div()
+                .size(28.0)
+                .rounded(14.0_f32)
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .cursor(CursorIcon::Pointer)
+                .on_click(move |_| state.ipc.toggle_tiling(&monitor))
+                .child(tiling_glyph(tiling));
+            ink.paint(ink.listen(button))
+        }))
+}
+
+/// The active workspace's layout as an icon: tiled or floating.
+fn tiling_glyph(tiling: Memo<Option<bool>>) -> Div {
+    div().flex().flex_none().child(dyn_view(move || {
+        let symbol = if tiling.get() == Some(true) {
+            icons::SPLITSCREEN_LEFT
         } else {
-            // With desktops off the glyph itself is the tiling toggle.
-            let click_state = view_state.clone();
-            let monitor_click = monitor_view.clone();
-            row.child(
-                div()
-                    .cursor(CursorIcon::Pointer)
-                    .on_click(move |_| click_state.ipc.toggle_tiling(&monitor_click))
-                    .child(glyph),
-            )
-        }
+            icons::SELECT_WINDOW
+        };
+        sized_icon(symbol, 16.0).text_color(color(PURPLE))
     }))
 }
 
@@ -264,6 +266,7 @@ fn control_button(body: &'static str, glyph: &'static str, on_click: impl Fn() +
                 .top(0.0)
                 .w(16.0)
                 .h(16.0)
+                .transition(Transition::ms(120))
                 .dyn_style(move |s| s.opacity(if hovered.get() { 1.0 } else { 0.0_f32 })),
         );
     track_hover(button, hovered)
@@ -307,40 +310,39 @@ pub fn window_controls(state: AppState, monitor: String) -> Div {
     }))
 }
 
+/// The date and time: an md3e toggle button that is on while the calendar is
+/// open.
 pub fn clock_pill(state: AppState, monitor: String) -> Div {
-    let hovered = signal(false);
     let click_state = state.clone();
     let monitor_click = monitor.clone();
-    let pill = div()
-        .h(22.0)
-        .px(8.0_f32)
-        .rounded(5.0_f32)
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor(CursorIcon::Pointer)
-        .dyn_style(move |s| {
-            if state.is_open(MenuKind::Calendar, &monitor) {
-                s.bg(color(RED_DIM))
-            } else if hovered.get() {
-                s.bg(color(SURFACE_RAISED))
-            } else {
-                s.bg(Color::TRANSPARENT)
-            }
-        })
-        .on_click(move |_| click_state.toggle_menu(MenuKind::Calendar, Some(&monitor_click), None))
-        .child(ui_text(
-            move || {
-                let t = local_time(Every::Second);
-                format!(
-                    "{}/{}/{}  {:02}:{:02}",
-                    t.day, t.month, t.year, t.hour, t.minute
-                )
-            },
-            FONT_SIZE,
-            TEXT,
-        ));
-    track_hover(pill, hovered)
+    let (open_state, open_monitor) = (state.clone(), monitor.clone());
+    styled_toggle_button(
+        move || {
+            let t = local_time(Every::Second);
+            format!(
+                "{}/{}/{}  {:02}:{:02}",
+                t.day, t.month, t.year, t.hour, t.minute
+            )
+        },
+        Binding::new(
+            move || state.is_open(MenuKind::Calendar, &monitor),
+            move |_| click_state.toggle_menu(MenuKind::Calendar, Some(&monitor_click), None),
+        ),
+        // The label of the next size up (13 px, as the clock was) in the
+        // smallest size's box, which also fits the 32 px bar.
+        ButtonStyle::filled().size(ButtonSize::Small),
+    )
+    .h(28.0)
+    .px(12.0_f32)
+    // Off, a filled toggle's label is the muted text color; the clock is
+    // read too often for that.
+    .dyn_style(move |s| {
+        if open_state.is_open(MenuKind::Calendar, &open_monitor) {
+            s
+        } else {
+            s.text_color(color(TEXT))
+        }
+    })
 }
 
 pub fn sys_usage(state: AppState) -> Div {
@@ -356,6 +358,7 @@ pub fn sys_usage(state: AppState) -> Div {
                 FONT_SIZE - 2.0,
                 TEXT_FAINT,
             )
+            .transition(Transition::ms(200))
             .dyn_style(move |s| {
                 s.text_color(color(if usage.get().0 >= 90.0 {
                     RED
@@ -370,6 +373,7 @@ pub fn sys_usage(state: AppState) -> Div {
                 FONT_SIZE - 2.0,
                 TEXT_FAINT,
             )
+            .transition(Transition::ms(200))
             .dyn_style(move |s| {
                 s.text_color(color(if usage.get().1 >= 90.0 {
                     RED
@@ -380,81 +384,63 @@ pub fn sys_usage(state: AppState) -> Div {
         )
 }
 
-fn speaker_icon(volume: f64, muted: bool, hex: u32) -> Svg {
-    let mut chart = svg()
-        .view_box(0.0, 0.0, 20.0, 18.0)
-        .aspect(svg::SvgAspect {
-            align: None,
-            slice: false,
-        })
-        .w(20.0)
-        .h(18.0);
-    let mut body = BezPath::new();
-    body.move_to(Point::new(2.0, 7.0));
-    body.line_to(Point::new(6.0, 7.0));
-    body.line_to(Point::new(10.0, 3.5));
-    body.line_to(Point::new(10.0, 14.5));
-    body.line_to(Point::new(6.0, 11.0));
-    body.line_to(Point::new(2.0, 11.0));
-    body.close_path();
-    chart = chart.child(svg::path(body).fill(color(hex)));
-    let arc = |x0: f64, y0: f64, cx: f64, cy: f64, x1: f64, y1: f64| {
-        let mut p = BezPath::new();
-        p.move_to(Point::new(x0, y0));
-        p.quad_to(Point::new(cx, cy), Point::new(x1, y1));
-        svg::path(p)
-            .fill_none()
-            .stroke(color(hex))
-            .stroke_width(1.4_f32)
-    };
-    if muted {
-        let mut cross = BezPath::new();
-        cross.move_to(Point::new(13.0, 6.5));
-        cross.line_to(Point::new(17.5, 11.5));
-        cross.move_to(Point::new(17.5, 6.5));
-        cross.line_to(Point::new(13.0, 11.5));
-        chart = chart.child(
-            svg::path(cross)
-                .fill_none()
-                .stroke(color(RED))
-                .stroke_width(1.4_f32),
-        );
-    } else {
-        chart = chart.child(arc(12.5, 6.8, 14.5, 9.0, 12.5, 11.2));
-        if volume * 100.0 > 50.0 {
-            chart = chart.child(arc(14.5, 5.0, 17.5, 9.0, 14.5, 13.0));
-        }
-    }
-    chart
+/// The volume: a Material speaker in a round box with md3e's hover and
+/// ripple. A click opens the status menu, the middle button mutes, the wheel
+/// is 5% a step. The box stays; only the icon in it is built again when the
+/// sound changes.
+pub fn volume_widget(state: AppState, monitor: String) -> Div {
+    div().child(show(
+        || audio().default_sink().is_some(),
+        move || volume_button(state.clone(), monitor.clone()),
+    ))
 }
 
-pub fn volume_widget(state: AppState, monitor: String) -> Div {
-    let click_state = state.clone();
-    div().child(dyn_view(move || {
-        let sink = audio().default_sink();
-        let Some(sink) = sink else {
-            return div();
-        };
-        let mute_sink = sink.clone();
-        let scroll_sink = sink.clone();
-        let menu_state = click_state.clone();
-        let monitor_menu = monitor.clone();
-        div()
-            .flex()
-            .items_center()
-            .cursor(CursorIcon::Pointer)
-            .on_click(move |_| menu_state.toggle_menu(MenuKind::Status, Some(&monitor_menu), None))
-            .on_aux_click(move |e: &PointerEvent| {
-                if e.button == Some(PointerButton::Middle) {
-                    let _ = mute_sink.set_muted(!mute_sink.muted);
-                }
-            })
-            .on_scroll(move |e: &ScrollEvent| {
+fn volume_button(state: AppState, monitor: String) -> Div {
+    let ink = Ink::new(|c| c.on_surface, || false);
+    let button = div()
+        .size(28.0)
+        .rounded(14.0_f32)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .cursor(CursorIcon::Pointer)
+        .on_click(move |_| state.toggle_menu(MenuKind::Status, Some(&monitor), None))
+        .on_aux_click(|e: &PointerEvent| {
+            if e.button == Some(PointerButton::Middle)
+                && let Some(sink) = untrack(|| audio().default_sink())
+            {
+                let _ = sink.set_muted(!sink.muted);
+            }
+        })
+        .on_scroll(|e: &ScrollEvent| {
+            // One step a wheel notch and one a finger gesture. This box stays
+            // while the sound changes, so a gesture's later frames, its lift
+            // and its inertia all come here too, the last two with no motion.
+            if e.delta_y == 0.0 || !matches!(e.phase, ScrollPhase::Single | ScrollPhase::Began) {
+                return;
+            }
+            if let Some(sink) = untrack(|| audio().default_sink()) {
                 let step = if e.delta_y < 0.0 { 0.05 } else { -0.05 };
-                let _ = scroll_sink.set_volume((scroll_sink.volume + step).clamp(0.0, 1.0));
-            })
-            .child(speaker_icon(sink.volume, sink.muted, TEXT_MUTED))
-    }))
+                let _ = sink.set_volume((sink.volume + step).clamp(0.0, 1.0));
+            }
+        })
+        .child(dyn_view(|| {
+            let Some(sink) = audio().default_sink() else {
+                return div();
+            };
+            let (symbol, hex) = if sink.muted {
+                (icons::VOLUME_OFF, RED)
+            } else if sink.volume <= 0.0 {
+                (icons::VOLUME_MUTE, TEXT_MUTED)
+            } else if sink.volume * 100.0 > 50.0 {
+                (icons::VOLUME_UP, TEXT_MUTED)
+            } else {
+                (icons::VOLUME_DOWN, TEXT_MUTED)
+            };
+            sized_icon(symbol, 18.0).text_color(color(hex))
+        }));
+    ink.paint(ink.listen(button))
 }
 
 pub fn battery_widget(state: AppState, monitor: String) -> Div {
@@ -530,7 +516,7 @@ pub fn battery_widget(state: AppState, monitor: String) -> Div {
                     ),
             );
         if charging {
-            row = row.child(ui_text("⚡", FONT_SIZE - 2.0, PURPLE));
+            row = row.child(sized_icon(icons::BOLT, 14.0).text_color(color(PURPLE)));
         }
         row
     }))
@@ -544,11 +530,16 @@ fn tray_item_view(output: Output, item: anti_webui::shell::TrayItem) -> Div {
     let oy = output.position.y;
     // The family is set here for the tray menu below, which is the toolkit's
     // own widget and would otherwise use the toolkit's default font.
+    let ink = Ink::new(|c| c.on_surface, || false);
     let icon: Div = div()
         .relative()
         .font_family(FONT_FAMILY)
-        .w(18.0)
-        .h(18.0)
+        .size(24.0)
+        .rounded(12.0_f32)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
         .cursor(CursorIcon::Pointer)
         .dyn_style(move |s| s.opacity(if hovered.get() { 1.0 } else { 0.85_f32 }))
         .on_click({
@@ -567,10 +558,8 @@ fn tray_item_view(output: Output, item: anti_webui::shell::TrayItem) -> Div {
                 let _ = click_item
                     .secondary_activate(ox + e.position.x as i32, oy + e.position.y as i32);
             }
-            Some(PointerButton::Secondary) => {
-                if click_item.has_menu {
-                    menu_open.set(!menu_open.get_untracked());
-                }
+            Some(PointerButton::Secondary) if click_item.has_menu => {
+                menu_open.set(!menu_open.get_untracked());
             }
             _ => {}
         });
@@ -588,7 +577,7 @@ fn tray_item_view(output: Output, item: anti_webui::shell::TrayItem) -> Div {
         icon
     };
     let icon = icon.child(tray_menu(&item, menu_open));
-    track_hover(icon, hovered)
+    track_hover(ink.paint(ink.listen(icon)), hovered)
 }
 
 pub fn tray_cluster(state: AppState, output: Output) -> Div {
@@ -616,43 +605,44 @@ pub fn tray_cluster(state: AppState, output: Output) -> Div {
         .child(battery_widget(state, monitor))
 }
 
+/// Updates waiting: an outlined md3e button, in amber when one of them
+/// would change repository. A click opens MinkaSyu.
 pub fn updates_pill(state: AppState) -> Div {
-    div().child(dyn_view(move || {
+    div().flex().flex_row().child(dyn_view(move || {
         let syu = state.syu.get();
         if syu.count == 0 {
             return div();
         }
         let attention = syu.repo_changes > 0;
         let label = if attention {
-            format!("↑ {} ⇄ {}", syu.count, syu.repo_changes)
+            format!("{} ⇄ {}", syu.count, syu.repo_changes)
         } else {
-            format!("↑ {}", syu.count)
+            syu.count.to_string()
         };
-        div()
-            .h(20.0)
-            .px(8.0_f32)
-            .rounded(10.0_f32)
-            .border(1.0_f32)
-            .border_color(color(if attention { WARN_AMBER } else { LINE }))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor(CursorIcon::Pointer)
-            .on_click(move |_| {
-                // `minka-syu ui` picks the window: its AntiWebUI front end,
-                // or the QML one under MINKA_SYU_DIR when that is missing.
-                let _ = std::process::Command::new(settings::syu_bin())
-                    .arg("ui")
-                    .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .spawn();
-            })
-            .child(mono_text(
-                label,
-                FONT_SIZE - 2.0,
-                if attention { WARN_AMBER } else { TEXT_MUTED },
-            ))
+        styled_button(
+            label,
+            ButtonStyle::outlined()
+                .size(ButtonSize::ExtraSmall)
+                .icon(icons::ARROW_UPWARD),
+        )
+        .dyn_style(move |s| {
+            if attention {
+                s.border_color(color(WARN_AMBER))
+                    .text_color(color(WARN_AMBER))
+            } else {
+                s
+            }
+        })
+        .on_click(move |_| {
+            // `minka-syu ui` picks the window: its AntiWebUI front end,
+            // or the QML one under MINKA_SYU_DIR when that is missing.
+            let _ = std::process::Command::new(settings::syu_bin())
+                .arg("ui")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        })
     }))
 }
 
@@ -661,6 +651,7 @@ pub fn health_dot(state: AppState) -> Div {
         .w(7.0)
         .h(7.0)
         .rounded(3.5_f32)
+        .transition(Transition::ms(200))
         .dyn_style(move |s| s.bg(color(if state.ipc_ready.get() { RED_DIM } else { RED })))
 }
 
