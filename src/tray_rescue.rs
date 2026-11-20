@@ -30,7 +30,6 @@
 use anti_webui::shell::TrayItem;
 use std::collections::HashSet;
 use std::future::Future;
-use std::io::Write;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::Poll;
@@ -62,10 +61,9 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(10);
 /// An item's unique bus name and its `Id`.
 pub type Saved = Vec<(String, String)>;
 
-/// A line for the shell's log. Not `eprintln!`, which panics when the log
-/// cannot be written to.
+/// A line for the shell's log (see `crate::note`).
 fn note(text: std::fmt::Arguments) {
-    let _ = writeln!(std::io::stderr(), "minkashell: tray rescue: {text}");
+    crate::note(format_args!("tray rescue: {text}"));
 }
 
 fn saved_path() -> Option<PathBuf> {

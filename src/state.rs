@@ -191,7 +191,7 @@ impl AppState {
     pub fn start_services(&self) {
         match notification_server() {
             Ok(server) => *self.notifs.borrow_mut() = Some(server),
-            Err(e) => eprintln!("minkashell: notifications unavailable: {e}"),
+            Err(e) => crate::note(format_args!("notifications unavailable: {e}")),
         }
         self.ipc.ensure_started();
         // Before the first tick can write the file: what the last shell
