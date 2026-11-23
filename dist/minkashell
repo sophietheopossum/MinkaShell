@@ -4,8 +4,9 @@
 #
 # The compositor config starts this with the shell's directory as its
 # argument, so the same script serves a repo checkout and an installed tree.
-# In a checkout the AntiWebUI binary is $CONFIG/target/release/minkashell;
-# an installed tree ships it as $CONFIG/minkashell.
+# In a checkout the AntiWebUI binary is in the target/ of the MinkaDE Cargo
+# workspace, $CONFIG/../target/release/minkashell; an installed tree ships it
+# as $CONFIG/minkashell.
 #
 # The Quickshell shell (shell.qml) stays in the tree as the fallback, and is
 # what runs when there is no binary: a session with the old shell beats a
@@ -31,8 +32,8 @@ CONFIG="${1:-/usr/share/minka/MinkaShell}"
 FRONTEND=antiwebui
 if [ "${MINKA_SHELL_FRONTEND:-}" = quickshell ]; then
     FRONTEND=quickshell
-elif [ -x "$CONFIG/target/release/minkashell" ]; then
-    BIN="$CONFIG/target/release/minkashell"
+elif [ -x "$CONFIG/../target/release/minkashell" ]; then
+    BIN="$CONFIG/../target/release/minkashell"
 elif [ -x "$CONFIG/minkashell" ]; then
     BIN="$CONFIG/minkashell"
 else

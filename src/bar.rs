@@ -17,8 +17,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 /// Directory holding `assets/` (window-control SVGs). Resolution order:
-/// `$MINKA_SHELL_DIR`, the exe's ancestors (repo checkout under
-/// `target/release`), then the installed tree.
+/// `$MINKA_SHELL_DIR`, the exe's ancestors (an installed tree keeps
+/// `assets/` beside the binary; a checkout builds into MinkaDE's
+/// `target/release`, so `MinkaShell/assets` two levels up), then the
+/// installed tree.
 pub fn assets_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("MINKA_SHELL_DIR").filter(|v| !v.is_empty()) {
         return PathBuf::from(dir).join("assets");
@@ -27,9 +29,10 @@ pub fn assets_dir() -> PathBuf {
         let mut dir = exe.parent().map(PathBuf::from);
         for _ in 0..4 {
             let Some(d) = dir else { break };
-            let candidate = d.join("assets");
-            if candidate.join("mac-glass-minimize.svg").exists() {
-                return candidate;
+            for candidate in [d.join("assets"), d.join("MinkaShell").join("assets")] {
+                if candidate.join("mac-glass-minimize.svg").exists() {
+                    return candidate;
+                }
             }
             dir = d.parent().map(PathBuf::from);
         }
