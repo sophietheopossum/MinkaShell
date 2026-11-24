@@ -1,49 +1,29 @@
 #!/bin/sh
 # MinkaShell launcher: runs the session shell with its output captured, and
-# starts the AntiWebUI shell again if it dies.
+# starts it again if it dies.
 #
 # The compositor config starts this with the shell's directory as its
 # argument, so the same script serves a repo checkout and an installed tree.
-# The AntiWebUI shell is part of MinkaDE's one binary, minka: $MINKA_BIN when
-# set (a build to try, such as a checkout's target/release-fast/minka), else
-# the installed /usr/bin/minka, else a build in the checkout this tree is
-# part of. It runs as `minka minkashell`.
-#
-# The Quickshell shell (shell.qml) stays in the tree as the fallback, and is
-# what runs when there is no binary: a session with the old shell beats a
-# session with none. MINKA_SHELL_FRONTEND=quickshell asks for it outright,
-# which is the way back if the AntiWebUI shell misbehaves: set it in
-# shojiwm-env.fish and log in again.
+# The shell is part of MinkaDE's one binary, minka: $MINKA_BIN when set (a
+# build to try, such as a checkout's target/release-fast/minka), else the
+# installed /usr/bin/minka, else a build in the checkout this tree is part of.
+# It runs as `minka minkashell`. There is no other shell to fall back to: with
+# no binary this logs why and exits 127.
 #
 # Output is appended to ~/.local/state/minka/minkashell.log, so what a shell
 # printed before it died is still there after the next login. (The old
 # `> /tmp/minkashell.log` redirect emptied the log at every session start.)
 #
-# Restarting: the compositor starts the shell once per session, and where a
-# script error left the Quickshell shell running, a Rust panic or a Wayland or
-# GPU error ends the AntiWebUI one. So this script stays as its parent and
-# starts it again after any exit but a clean one (status 0 is a quit, or a
-# second launch finding the first). Three such exits inside a minute hand the
-# session to the Quickshell shell instead of looping. To stop the shell for
-# good, signal this script, not the binary: it passes the signal on and exits.
+# Restarting: the compositor starts the shell once per session, and a Rust
+# panic or a Wayland or GPU error ends it. So this script stays as its parent
+# and starts it again after any exit but a clean one (status 0 is a quit, or a
+# second launch finding the first). A shell that keeps dying is started less
+# and less often: after 1 s, then 2, 4, 8 and 16, then every 30 s, and after
+# 1 s again once a run has lasted a minute. To stop the shell for good, signal
+# this script, not the binary: it passes the signal on and exits.
 set -eu
 
 CONFIG="${1:-/usr/share/minka/MinkaShell}"
-
-FRONTEND=antiwebui
-BIN=
-if [ "${MINKA_SHELL_FRONTEND:-}" = quickshell ]; then
-    FRONTEND=quickshell
-else
-    for candidate in "${MINKA_BIN:-}" /usr/bin/minka \
-        "$CONFIG/../target/release-fast/minka" "$CONFIG/../target/release/minka"; do
-        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-            BIN=$candidate
-            break
-        fi
-    done
-    [ -n "$BIN" ] || FRONTEND='quickshell, no minka binary'
-fi
 
 LOG_DIR="${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/minka"
 LOG="$LOG_DIR/minkashell.log"
@@ -58,21 +38,37 @@ note() {
     printf '\n=== MinkaShell %s: %s ===\n' "$1" "$(date -Is)" >> "$LOG"
 }
 
-quickshell() {
-    # --log-times so the shell's lines can be matched against kernel events.
-    exec qs --log-times -p "$CONFIG" >> "$LOG" 2>&1
-}
+BIN=
+for candidate in "${MINKA_BIN:-}" /usr/bin/minka \
+    "$CONFIG/../target/release-fast/minka" "$CONFIG/../target/release/minka"; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        BIN=$candidate
+        break
+    fi
+done
+if [ -z "$BIN" ]; then
+    note "no minka binary (MINKA_BIN, /usr/bin/minka, or a build beside $CONFIG), not starting"
+    exit 127
+fi
 
-note "starting ($FRONTEND${BIN:+, $BIN})"
-[ "$FRONTEND" = antiwebui ] || quickshell
+note "starting ($BIN)"
 
-# The compositor's socket: once it is gone the session is over, and a shell
-# that exited because of that must not be started again.
+# Once the compositor is gone the session is over, and a shell that exited
+# because of that must not be started again. Its socket going is not enough
+# to tell: a compositor that crashes (or aborts on its watchdog) leaves the
+# socket file behind. But the session starts this script as the compositor's
+# own child (session.rs execs it), so being handed to another parent means
+# the compositor has died.
 case "${WAYLAND_DISPLAY:-wayland-0}" in
     /*) SOCKET="${WAYLAND_DISPLAY}" ;;
     *) SOCKET="${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY:-wayland-0}" ;;
 esac
+COMPOSITOR=$PPID
+compositor_alive() {
+    [ -S "$SOCKET" ] && [ "$(ps -o ppid= -p $$ | tr -d ' ')" = "$COMPOSITOR" ]
+}
 
+# $child is the shell, or the sleep between two runs, so a signal stops either.
 child=
 stop() {
     trap - TERM INT HUP
@@ -84,9 +80,9 @@ stop() {
 }
 trap stop TERM INT HUP
 
-failures=0
-window=0
+delay=1
 while :; do
+    started=$(date +%s)
     "$BIN" minkashell >> "$LOG" 2>&1 &
     child=$!
     status=0
@@ -94,20 +90,24 @@ while :; do
     child=
     [ "$status" -ne 0 ] || exit 0
 
-    if [ ! -S "$SOCKET" ]; then
+    if ! compositor_alive; then
         note "exited with status $status and the compositor is gone, not restarting"
         exit "$status"
     fi
-    now=$(date +%s)
-    if [ $((now - window)) -gt 60 ]; then
-        window=$now
-        failures=0
+    if [ $(($(date +%s) - started)) -ge 60 ]; then
+        delay=1
     fi
-    failures=$((failures + 1))
-    if [ "$failures" -ge 3 ]; then
-        note "exited with status $status, the third time in a minute: starting the Quickshell shell instead"
-        quickshell
+    note "exited with status $status, restarting in ${delay}s"
+    # In the background and waited for, so a signal during the pause is
+    # handled at once rather than after the sleep.
+    sleep "$delay" &
+    child=$!
+    wait "$child" || true
+    child=
+    if ! compositor_alive; then
+        note "the compositor went during the pause, not restarting"
+        exit "$status"
     fi
-    note "exited with status $status, restarting"
-    sleep 1
+    delay=$((delay * 2))
+    [ "$delay" -le 30 ] || delay=30
 done

@@ -600,8 +600,7 @@ pub fn updates_pill(state: AppState) -> Div {
             }
         })
         .on_click(move |_| {
-            // `minka-syu ui` picks the window: its AntiWebUI front end,
-            // or the QML one under MINKA_SYU_DIR when that is missing.
+            // `minka-syu ui` opens MinkaSyu's window (minka-syu-gui).
             let _ = std::process::Command::new(settings::syu_bin())
                 .arg("ui")
                 .stdin(std::process::Stdio::null())

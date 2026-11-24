@@ -1,100 +1,58 @@
 # MinkaShell
 
-Quickshell (Qt6/QML) half of the Minka hybrid shell. Owns the widget- and
-service-heavy surfaces (bar, menus, tray, notifications); the Guido (Rust +
-wgpu) process `minka-fx` will own transient animated overlays. Both are peers
-on ShojiWM's NDJSON IPC socket — see `ARCH_MAP.md` in the repo root and the
-design artifact for the full architecture.
+The Minka session shell, an AntiWebUI application and part of MinkaDE's one
+binary, `minka` (it runs as `minka minkashell`). It replaced the Quickshell
+shell, which is gone (24/11/2026); the git history has it.
 
-## Status — milestone M1 (skeleton)
-
-- [x] `ShojiIpc` singleton: non-blocking NDJSON client for
-      `$XDG_RUNTIME_DIR/shojiwm-$WAYLAND_DISPLAY.sock`, auto-reconnect on
-      config hot-reload, id-correlated requests, reactive `view`.
-- [x] `ShellLayout` singleton: Zenbook Duo role resolution — panels pin to the
-      1920x515 ScreenPad when present, KDE-style layout otherwise.
-- [x] `Theme` singleton: Eternal Darkness tokens (black/red, purple tertiary).
-- [x] Bare bar per output: live workspaces (click to activate, middle-click to
-      toggle tiling) + clock + IPC health dot.
-## Status — milestone M2 (widget parity, core slice)
-
-- [x] Bar right cluster: StatusNotifier tray (left/middle/right-click per the
-      SNI spec), UPower battery, CPU/RAM sampler.
-- [x] Start-menu button + launcher: fullscreen searchable app grid (KDE
-      "Application Dashboard" / Win8 style), Enter launches the top hit,
-      Escape or empty-space click closes, session controls
-      (logout/sleep/reboot/poweroff). Opens via bar button or the
-      `ui.startMenu` broadcast (Super+A / Super tap — config now broadcasts
-      alongside the legacy `ags request` so both shells respond during the
-      transition).
-- [x] Dock: persistent taskbar (no auto-hide, per Sophie 8/7/2026) with icon +
-      window title chips, exclusive zone, click to activate, middle-click to
-      close, right-click menu with a close action (`windows.close` IPC). In
-      duo mode the ScreenPad instance lists every monitor's windows. The
-      compositor's `dock.proximity` broadcast is no longer consumed.
-- [x] Notification popups (`org.freedesktop.Notifications` server in
-      `services/Notifs.qml`), panel-output only, 6s expiry, click to dismiss.
-- [x] Calendar menu: bar clock toggles a Monday-first month view, today in
-      red, ‹/› month paging, click the title to jump back to today.
-- [x] Audio status menu: `vol` widget in the bar (click opens, scroll ±5%,
-      middle-click mutes) + menu with slider/mute for default sink and
-      source via PipeWire. Audio only — network is handled by CMST, per
-      Sophie.
-- [x] Focused-window title in the bar (per monitor, elided at 320px).
-- [x] Fixes from testing: tray right-click menus are self-rendered
-      (TrayMenu: PopupWindow + QsMenuOpener over the DBus menu tree) after
-      both Qt platform-menu paths (display(), QsMenuAnchor) errored on
-      ShojiWM — see TrayMenu.qml's header for the dbusmenu lifetime rules
-      that took four rounds to learn; launcher search matches desktop
-      id/exec/keywords, with name-prefix hits ranked first.
-- [ ] M2 remainder: dock pinning (waits on dock testing). Out of scope by
-      decision: clipboard menu (dropped), wallpaper switcher (moves to the
-      future Minka settings utility).
-- [x] M3 (in progress): shoji-bar-2 retired — the ShojiWM config now spawns
-      MinkaShell as the session shell (logs at /tmp/minkashell.log) and the
-      `ags request` paths are gone. MinkaFX (wgpu overlay process, see
-      ../MinkaFX) takes the snap preview; OSDs next. Dock testing is now
-      unblocked (MinkaShell's dock owns the proximity zone).
+In the Duo layout it is a dock across the ScreenPad and a 400 px side column
+beside it; elsewhere a top bar and a dock. It carries the start menu, the
+clock and calendar, battery, the audio status menu (with per-app mute
+through `scripts/app-mute.py`), the tray, the updates pill that opens
+MinkaSyu, the IPC health dot, and the session's notification server.
 
 ## Running
 
-```sh
-sudo pacman -S quickshell   # cachyos-extra, 0.3.0 at time of writing
+The compositor config starts `dist/minkashell <this directory>` once per
+session. The launcher runs `$MINKA_BIN`, else `/usr/bin/minka`, else a build
+in this checkout, appends the output to `~/.local/state/minka/minkashell.log`
+(rolled at 2 MB), and starts the shell again when it dies: after 1 s, then
+2, 4, 8 and 16, then every 30 s, and after 1 s again once a run has lasted a
+minute. It stops when the shell exits cleanly or the compositor is gone.
 
-qs -p /home/seirra/Documents/src/MinkaDE/MinkaShell
-```
-
-or make it the default config: `ln -s /home/seirra/Documents/src/MinkaDE/MinkaShell ~/.config/quickshell`.
-
-Requires a running ShojiWM session whose config creates the IPC server
-(`createIpcServer()` — already present in `~/.config/shojiwm/src/index.tsx`).
-shoji-bar-2 can keep running simultaneously; broadcasts fan out to every
-connected client, which makes side-by-side parity comparison easy.
+- To try a build: `cargo build --profile release-fast -p minka` in the
+  MinkaDE checkout, then set `MINKA_BIN` to `target/release-fast/minka` for
+  the launcher.
+- To stop the shell, signal the launcher, not the binary: a killed binary is
+  started again. To put a new build live, signal the binary: the launcher
+  starts the new one.
+- `MINKA_SHELL_DIR` (set in `shojiwm-env.fish`) points the session at this
+  checkout instead of `/usr/share/minka/MinkaShell`; the shell reads
+  `assets/` and `scripts/` from there.
 
 ## Layout
 
 ```
-shell.qml              entry point: per-screen Variants
-services/
-  ShojiIpc.qml         IPC singleton (socket, reconnect, reactive state)
-  ShellLayout.qml      monitor role policy (Duo mode)
-  MenuState.qml        cross-window menu routing (Duo-aware)
-  Notifs.qml           the NotificationServer (exactly one per shell)
-  Theme.qml            design tokens
-modules/bar/
-  Bar.qml              top panel (PanelWindow, exclusive zone)
-  Workspaces.qml       workspace pills bound to ShojiIpc.view
-  Clock.qml            d/M/yyyy HH:mm
-  SystemTrayWidget.qml Battery.qml SysUsage.qml
-modules/dock/Dock.qml            proximity-revealed dock
-modules/startmenu/StartMenu.qml  launcher + session controls
-modules/notifications/NotifPopup.qml
+src/lib.rs            entry point: surfaces per output, layout rules
+src/bar.rs            the top bar and its widgets
+src/sidepanel.rs      the Duo side column, built from the bar's widgets
+src/dock.rs           window chips, drag to reorder
+src/menus.rs          dropdown menus, the start menu, the click-away backdrop
+src/status.rs         audio status menu: default sink and source, per-app volume
+src/notifications.rs  notification popups (org.freedesktop.Notifications)
+src/ipc.rs            ShojiWM IPC: the workspace view model and commands
+src/state.rs          shared state: IPC view, menu routing, settings, updates
+src/settings.rs       ~/.config/minka-settings.json, MinkaSyu state, layouts
+src/theme.rs          Proustite tokens and the shell's own
+src/instance.rs       single-instance guard
+src/tray_rescue.rs    keeps the tray's icons across a restart of the shell
+assets/               window-button and other icons
+scripts/app-mute.py   per-application mute
+dist/minkashell       the launcher
 ```
 
-## IPC contract (served by the ShojiWM config)
+## IPC (served by the Minka config)
 
-Requests: `workspaces.get`, `workspaces.switch`, `workspaces.activate`,
-`workspaces.toggleTiling`, `windows.activate`, `windows.close`,
-`debug.geometry` (diagnostic dump: outputs, layer zones, usable areas).
-Broadcasts consumed: `workspaces.changed` (snap.preview belongs to MinkaFX
-now; dock.proximity is no longer consumed by anything).
+Requests: `workspaces.get`, `workspaces.activate`, `workspaces.toggleTiling`,
+`windows.activate`, `windows.close`, `windows.minimize`, `windows.maximize`,
+`windows.reorder`. Broadcasts consumed: `workspaces.changed`,
+`ui.startMenu` (Super+A or a Super tap).
