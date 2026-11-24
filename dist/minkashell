@@ -4,9 +4,10 @@
 #
 # The compositor config starts this with the shell's directory as its
 # argument, so the same script serves a repo checkout and an installed tree.
-# In a checkout the AntiWebUI binary is in the target/ of the MinkaDE Cargo
-# workspace, $CONFIG/../target/release/minkashell; an installed tree ships it
-# as $CONFIG/minkashell.
+# The AntiWebUI shell is part of MinkaDE's one binary, minka: $MINKA_BIN when
+# set (a build to try, such as a checkout's target/release-fast/minka), else
+# the installed /usr/bin/minka, else a build in the checkout this tree is
+# part of. It runs as `minka minkashell`.
 #
 # The Quickshell shell (shell.qml) stays in the tree as the fallback, and is
 # what runs when there is no binary: a session with the old shell beats a
@@ -30,14 +31,18 @@ set -eu
 CONFIG="${1:-/usr/share/minka/MinkaShell}"
 
 FRONTEND=antiwebui
+BIN=
 if [ "${MINKA_SHELL_FRONTEND:-}" = quickshell ]; then
     FRONTEND=quickshell
-elif [ -x "$CONFIG/../target/release/minkashell" ]; then
-    BIN="$CONFIG/../target/release/minkashell"
-elif [ -x "$CONFIG/minkashell" ]; then
-    BIN="$CONFIG/minkashell"
 else
-    FRONTEND='quickshell, no AntiWebUI binary'
+    for candidate in "${MINKA_BIN:-}" /usr/bin/minka \
+        "$CONFIG/../target/release-fast/minka" "$CONFIG/../target/release/minka"; do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+            BIN=$candidate
+            break
+        fi
+    done
+    [ -n "$BIN" ] || FRONTEND='quickshell, no minka binary'
 fi
 
 LOG_DIR="${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/minka"
@@ -58,7 +63,7 @@ quickshell() {
     exec qs --log-times -p "$CONFIG" >> "$LOG" 2>&1
 }
 
-note "starting ($FRONTEND)"
+note "starting ($FRONTEND${BIN:+, $BIN})"
 [ "$FRONTEND" = antiwebui ] || quickshell
 
 # The compositor's socket: once it is gone the session is over, and a shell
@@ -82,7 +87,7 @@ trap stop TERM INT HUP
 failures=0
 window=0
 while :; do
-    "$BIN" >> "$LOG" 2>&1 &
+    "$BIN" minkashell >> "$LOG" 2>&1 &
     child=$!
     status=0
     wait "$child" || status=$?

@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2024"
 description = "Minka session shell: bar, dock, menus, notifications"
 
-[[bin]]
+# A library: MinkaDE's one binary (minka/, at the top of the checkout) runs it
+# under the name it was started as. Nothing is built from here alone.
+[lib]
 name = "minkashell"
-path = "src/main.rs"
+path = "src/lib.rs"
+doctest = false
 
 [dependencies]
 # "svg" is not optional here: the window-control buttons (assets/mac-glass-*.svg)
@@ -24,3 +27,5 @@ serde_json = "1"
 # The same zbus, with the same features, that the toolkit already builds: the
 # tray rescue (src/tray_rescue.rs) makes a few calls of its own.
 zbus = { version = "5", default-features = false, features = ["async-io"] }
+# MinkaDE's palette (generated from Proustite.qml), shared by every app.
+proustite = { path = "../Proustite" }
