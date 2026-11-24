@@ -25,19 +25,10 @@ use state::AppState;
 use theme::*;
 
 /// Writes `minkashell: <text>` to the shell's log as one line, with one
-/// write(2). stderr is the O_APPEND file that `dist/minkashell` opens.
-///
-/// Not `eprintln!` or `writeln!(stderr(), ..)`: stderr has no buffer, so both
-/// make one write(2) per piece of the format string, which costs about four
-/// times as much and lets another writer to the same file (Mesa, say) land in
-/// the middle of the line. `eprintln!` also panics when the write fails, on a
-/// full disk for one; a failed write here is ignored.
+/// write(2) (`minka_note` says why not `eprintln!`). stderr is the O_APPEND
+/// file that `dist/minkashell` opens.
 fn note(text: std::fmt::Arguments) {
-    use std::fmt::Write as _;
-    use std::io::Write as _;
-    let mut line = String::with_capacity(128);
-    let _ = writeln!(line, "minkashell: {text}");
-    let _ = std::io::stderr().write_all(line.as_bytes());
+    minka_note::note!("minkashell: {text}");
 }
 
 fn wallpaper_body(path: String) -> Div {
