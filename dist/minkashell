@@ -1,113 +1,38 @@
 #!/bin/sh
-# MinkaShell launcher: runs the session shell with its output captured, and
-# starts it again if it dies.
+# MinkaShell launcher: runs the session shell through minka-keep, which does
+# the work. The keeper runs `minka minkashell` ($MINKA_BIN, else the
+# installed /usr/bin/minka, else a build in the checkout), appends its output
+# to ~/.local/state/minka/minkashell.log, and starts it again when it dies:
+# after 1 s, then 2, 4, 8 and 16, then every 30 s, until a clean exit or the
+# compositor is gone. There is no other shell to fall back to.
 #
-# The compositor config starts this with the shell's directory as its
-# argument, so the same script serves a repo checkout and an installed tree.
-# The shell is part of MinkaDE's one binary, minka: $MINKA_BIN when set (a
-# build to try, such as a checkout's target/release-fast/minka), else the
-# installed /usr/bin/minka, else a build in the checkout this tree is part of.
-# It runs as `minka minkashell`. There is no other shell to fall back to: with
-# no binary this logs why and exits 127.
+# The session config execs this with the shell's directory as its argument.
+# It is not needed now: the keeper finds a checkout's builds from its own
+# path.
 #
-# Output is appended to ~/.local/state/minka/minkashell.log, so what a shell
-# printed before it died is still there after the next login. (The old
-# `> /tmp/minkashell.log` redirect emptied the log at every session start.)
+# The keeper beside this script comes first: in a MinkaDE checkout,
+# packaging/minka-keep. The session runs a checkout's launcher with whatever
+# minkade package is installed, and packages up to 0.93.0 have no
+# /usr/lib/minka/minka-keep. An installed launcher has no keeper beside it,
+# and uses the one its own package installed. $MINKA_KEEP names another, as
+# the packaging tests do.
 #
-# Restarting: the compositor starts the shell once per session, and a Rust
-# panic or a Wayland or GPU error ends it. So this script stays as its parent
-# and starts it again after any exit but a clean one (status 0 is a quit, or a
-# second launch finding the first). A shell that keeps dying is started less
-# and less often: after 1 s, then 2, 4, 8 and 16, then every 30 s, and after
-# 1 s again once a run has lasted a minute. To stop the shell for good, signal
-# this script, not the binary: it passes the signal on and exits.
+# This must exec the keeper: it takes its parent for the compositor, and
+# stops restarting the shell once it has another. To stop the shell for good,
+# signal the keeper (this script's PID), not the binary. With no keeper this
+# logs why and exits 127.
 set -eu
 
-CONFIG="${1:-/usr/share/minka/MinkaShell}"
+HERE=$(dirname "$0")
+for KEEP in "${MINKA_KEEP:-}" "$HERE/../../packaging/minka-keep" /usr/lib/minka/minka-keep; do
+    if [ -n "$KEEP" ] && [ -x "$KEEP" ]; then
+        exec "$KEEP" minkashell
+    fi
+done
 
 LOG_DIR="${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/minka"
-LOG="$LOG_DIR/minkashell.log"
-mkdir -p "$LOG_DIR"
-
-# Roll at 2MB keeping one generation, as MinkaMon's launcher does.
-if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 2097152 ]; then
-    mv -f "$LOG" "$LOG.1"
-fi
-
-note() {
-    printf '\n=== MinkaShell %s: %s ===\n' "$1" "$(date -Is)" >> "$LOG"
-}
-
-BIN=
-for candidate in "${MINKA_BIN:-}" /usr/bin/minka \
-    "$CONFIG/../target/release-fast/minka" "$CONFIG/../target/release/minka"; do
-    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-        BIN=$candidate
-        break
-    fi
-done
-if [ -z "$BIN" ]; then
-    note "no minka binary (MINKA_BIN, /usr/bin/minka, or a build beside $CONFIG), not starting"
-    exit 127
-fi
-
-note "starting ($BIN)"
-
-# Once the compositor is gone the session is over, and a shell that exited
-# because of that must not be started again. Its socket going is not enough
-# to tell: a compositor that crashes (or aborts on its watchdog) leaves the
-# socket file behind. But the session starts this script as the compositor's
-# own child (session.rs execs it), so being handed to another parent means
-# the compositor has died.
-case "${WAYLAND_DISPLAY:-wayland-0}" in
-    /*) SOCKET="${WAYLAND_DISPLAY}" ;;
-    *) SOCKET="${XDG_RUNTIME_DIR:-/nonexistent}/${WAYLAND_DISPLAY:-wayland-0}" ;;
-esac
-COMPOSITOR=$PPID
-compositor_alive() {
-    [ -S "$SOCKET" ] && [ "$(ps -o ppid= -p $$ | tr -d ' ')" = "$COMPOSITOR" ]
-}
-
-# $child is the shell, or the sleep between two runs, so a signal stops either.
-child=
-stop() {
-    trap - TERM INT HUP
-    if [ -n "$child" ]; then
-        kill -TERM "$child" 2> /dev/null || true
-        wait "$child" 2> /dev/null || true
-    fi
-    exit 0
-}
-trap stop TERM INT HUP
-
-delay=1
-while :; do
-    started=$(date +%s)
-    "$BIN" minkashell >> "$LOG" 2>&1 &
-    child=$!
-    status=0
-    wait "$child" || status=$?
-    child=
-    [ "$status" -ne 0 ] || exit 0
-
-    if ! compositor_alive; then
-        note "exited with status $status and the compositor is gone, not restarting"
-        exit "$status"
-    fi
-    if [ $(($(date +%s) - started)) -ge 60 ]; then
-        delay=1
-    fi
-    note "exited with status $status, restarting in ${delay}s"
-    # In the background and waited for, so a signal during the pause is
-    # handled at once rather than after the sleep.
-    sleep "$delay" &
-    child=$!
-    wait "$child" || true
-    child=
-    if ! compositor_alive; then
-        note "the compositor went during the pause, not restarting"
-        exit "$status"
-    fi
-    delay=$((delay * 2))
-    [ "$delay" -le 30 ] || delay=30
-done
+mkdir -p "$LOG_DIR" 2> /dev/null || true
+printf '\n=== minkashell no minka-keep (MINKA_KEEP, %s or %s), not starting: %s ===\n' \
+    "$HERE/../../packaging/minka-keep" /usr/lib/minka/minka-keep "$(date -Is)" \
+    2> /dev/null >> "$LOG_DIR/minkashell.log" || true
+exit 127

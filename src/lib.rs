@@ -25,7 +25,7 @@ use theme::*;
 
 /// Writes `minkashell: <text>` to the shell's log as one line, with one
 /// write(2) (`minka_note` says why not `eprintln!`). stderr is the O_APPEND
-/// file that `dist/minkashell` opens.
+/// file that minka-keep (`packaging/minka-keep`) opens.
 fn note(text: std::fmt::Arguments) {
     minka_note::note!("minkashell: {text}");
 }
