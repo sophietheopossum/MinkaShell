@@ -5,7 +5,6 @@
 #[allow(dead_code)]
 mod bar;
 mod dock;
-mod instance;
 #[allow(dead_code)]
 mod ipc;
 mod menus;
@@ -162,9 +161,9 @@ fn install_dock_and_side_panel(state: AppState) {
     });
 }
 
-fn shell_root(guard: instance::InstanceGuard) {
+fn shell_root() {
     theme::install();
-    let state = AppState::new(guard);
+    let state = AppState::new();
     state.start_services();
     install_output_surfaces(state.clone());
     install_dock_and_side_panel(state.clone());
@@ -173,15 +172,16 @@ fn shell_root(guard: instance::InstanceGuard) {
 }
 
 pub fn main() {
-    let guard = match instance::claim() {
-        instance::InstanceClaim::Primary(guard) => guard,
-        instance::InstanceClaim::Duplicate => return,
+    // A second shell would stack a second set of exclusive zones. The lock
+    // is held until the process exits; the shell has no use for its events.
+    let minka_instance::Claim::Primary(_) = minka_instance::claim("minkashell") else {
+        return;
     };
 
     if let Err(error) = Shell::new()
         .namespace("minkashell")
         .app_id("minkashell")
-        .run(move || shell_root(guard))
+        .run(shell_root)
     {
         note(format_args!("{error}"));
         std::process::exit(1);

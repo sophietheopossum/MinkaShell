@@ -43,7 +43,6 @@ src/ipc.rs            ShojiWM IPC: the workspace view model and commands
 src/state.rs          shared state: IPC view, menu routing, settings, updates
 src/settings.rs       ~/.config/minka-settings.json, MinkaSyu state, layouts
 src/theme.rs          Proustite tokens and the shell's own
-src/instance.rs       single-instance guard
 src/tray_rescue.rs    keeps the tray's icons across a restart of the shell
 assets/               window-button and other icons
 scripts/app-mute.py   per-application mute

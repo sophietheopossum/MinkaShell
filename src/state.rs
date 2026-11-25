@@ -3,7 +3,6 @@
 //! (`ShojiIpc`, `MenuState`, `ShellLayout`, `SyuState`) plus `SysUsage`'s
 //! /proc sampler (read directly here instead of spawning `sh`).
 
-use crate::instance::InstanceGuard;
 use crate::ipc::{IpcController, IpcNews, WorkspaceView};
 use crate::settings::{self, Settings, SyuState};
 use crate::tray_rescue;
@@ -71,11 +70,10 @@ pub struct AppState {
     /// Until when, after the start menu closed, the last focused window
     /// stays marked (see `IpcNews::View`).
     focus_hold_until: Rc<Cell<Option<Instant>>>,
-    _guard: Rc<InstanceGuard>,
 }
 
 impl AppState {
-    pub fn new(guard: InstanceGuard) -> Self {
+    pub fn new() -> Self {
         Self {
             ipc: IpcController::new(),
             view: signal(WorkspaceView::default()),
@@ -96,7 +94,6 @@ impl AppState {
             prev_cpu: Rc::new(Cell::new(None)),
             tray_saved: Rc::new(RefCell::new(Vec::new())),
             focus_hold_until: Rc::new(Cell::new(None)),
-            _guard: Rc::new(guard),
         }
     }
 
